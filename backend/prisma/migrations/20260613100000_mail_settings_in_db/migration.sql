@@ -1,0 +1,53 @@
+CREATE TABLE `mail_settings` (
+  `id` VARCHAR(50) NOT NULL DEFAULT 'default',
+  `system_mail_domain` VARCHAR(255) NOT NULL DEFAULT 'researvia.com',
+  `system_smtp_host` VARCHAR(255) NOT NULL DEFAULT 'mail.researvia.com',
+  `system_smtp_port` INTEGER NOT NULL DEFAULT 465,
+  `system_imap_host` VARCHAR(255) NOT NULL DEFAULT 'mail.researvia.com',
+  `system_imap_port` INTEGER NOT NULL DEFAULT 993,
+  `system_mailbox_quota_mb` INTEGER NOT NULL DEFAULT 1024,
+  `tracking_base_url` VARCHAR(500) NOT NULL DEFAULT 'http://localhost:3001',
+  `mailbox_provision_required` BOOLEAN NOT NULL DEFAULT false,
+  `cpanel_base_url` VARCHAR(500) NULL,
+  `cpanel_username` VARCHAR(255) NULL,
+  `encrypted_cpanel_api_token` VARCHAR(1000) NULL,
+  `email_queues_enabled` BOOLEAN NOT NULL DEFAULT false,
+  `email_send_async` BOOLEAN NOT NULL DEFAULT false,
+  `email_send_concurrency` INTEGER NOT NULL DEFAULT 5,
+  `mailbox_sync_concurrency` INTEGER NOT NULL DEFAULT 3,
+  `created_at` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  `updated_at` DATETIME(3) NOT NULL,
+  PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+INSERT INTO `mail_settings` (
+  `id`,
+  `system_mail_domain`,
+  `system_smtp_host`,
+  `system_smtp_port`,
+  `system_imap_host`,
+  `system_imap_port`,
+  `system_mailbox_quota_mb`,
+  `tracking_base_url`,
+  `mailbox_provision_required`,
+  `email_queues_enabled`,
+  `email_send_async`,
+  `email_send_concurrency`,
+  `mailbox_sync_concurrency`,
+  `updated_at`
+) VALUES (
+  'default',
+  'researvia.com',
+  'mail.researvia.com',
+  465,
+  'mail.researvia.com',
+  993,
+  1024,
+  'http://localhost:3001',
+  false,
+  false,
+  false,
+  5,
+  3,
+  CURRENT_TIMESTAMP(3)
+);

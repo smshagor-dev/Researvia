@@ -1,0 +1,100 @@
+version: '3.9'
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: profcrm_mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpass123
+      MYSQL_DATABASE: profcrm_db
+      MYSQL_USER: profcrm
+      MYSQL_PASSWORD: profcrm_pass
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci --default-authentication-plugin=mysql_native_password
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-prootpass123"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  redis:
+    image: redis:7-alpine
+    container_name: profcrm_redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: runner
+    container_name: profcrm_api
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    environment:
+      NODE_ENV: development
+      PORT: 3001
+      DATABASE_URL: mysql://profcrm:profcrm_pass@mysql:3306/profcrm_db?connection_limit=10
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: dev-jwt-secret-change-in-production-32chars
+      JWT_ACCESS_EXPIRES: 15m
+      JWT_REFRESH_EXPIRES: 30d
+      ENCRYPTION_KEY: 0123456789abcdef0123456789abcdef
+      APP_URL: http://localhost:3001
+      FRONTEND_URL: http://localhost:3000
+      OPENALEX_EMAIL: admin@profcrm.com
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+      - /app/dist
+    command: sh -c "npm run db:prepare && (npx prisma db seed || true) && node dist/main.js"
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: profcrm_frontend
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:3001/v1
+      NEXT_PUBLIC_WS_URL: http://localhost:3001
+    depends_on:
+      - api
+
+  nginx:
+    image: nginx:alpine
+    container_name: profcrm_nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/conf:/etc/nginx/conf.d:ro
+    depends_on:
+      - api
+      - frontend
+
+volumes:
+  mysql_data:
+  redis_data:

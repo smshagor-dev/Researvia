@@ -1,0 +1,77 @@
+import { Module } from '@nestjs/common';
+import { ConfigModule } from '@nestjs/config';
+import { ThrottlerModule } from '@nestjs/throttler';
+import { ScheduleModule } from '@nestjs/schedule';
+import { AppConfigModule } from './config/config.module';
+import { PrismaModule } from './shared/prisma/prisma.module';
+import { RedisModule } from './shared/redis/redis.module';
+import { StorageModule } from './modules/storage/storage.module';
+import { AuthModule } from './modules/auth/auth.module';
+import { UsersModule } from './modules/users/users.module';
+import { UniversitiesModule } from './modules/universities/universities.module';
+import { DepartmentsModule } from './modules/departments/departments.module';
+import { ProfessorsModule } from './modules/professors/professors.module';
+import { ProfessorEmailsModule } from './modules/professor-emails/professor-emails.module';
+import { ResearchAreasModule } from './modules/research-areas/research-areas.module';
+import { PublicationsModule } from './modules/publications/publications.module';
+import { ScholarshipsModule } from './modules/scholarships/scholarships.module';
+import { FavoritesModule } from './modules/favorites/favorites.module';
+import { EmailAccountsModule } from './modules/email-accounts/email-accounts.module';
+import { EmailThreadsModule } from './modules/email-threads/email-threads.module';
+import { EmailMessagesModule } from './modules/email-messages/email-messages.module';
+import { EmailRealtimeModule } from './modules/email-realtime/email-realtime.module';
+import { InboxSyncModule } from './modules/inbox-sync/inbox-sync.module';
+import { AiModule } from './modules/ai/ai.module';
+import { SearchModule } from './modules/search/search.module';
+import { CreditsModule } from './modules/credits/credits.module';
+import { SubscriptionsModule } from './modules/subscriptions/subscriptions.module';
+import { BillingModule } from './modules/billing/billing.module';
+import { NotificationsModule } from './modules/notifications/notifications.module';
+import { AnalyticsModule } from './modules/analytics/analytics.module';
+import { AdminModule } from './modules/admin/admin.module';
+import { StudentProfileModule } from './modules/student-profile/student-profile.module';
+import { HealthModule } from './modules/health/health.module';
+import { WebhooksModule } from './modules/webhooks/webhooks.module';
+import { QueuesModule } from './queues/queues.module';
+import { CronModule } from './cron/cron.module';
+
+@Module({
+  imports: [
+    ConfigModule.forRoot({ isGlobal: true, envFilePath: '.env' }),
+    ScheduleModule.forRoot(),
+    ThrottlerModule.forRoot([{ ttl: 60000, limit: 200 }]),
+    AppConfigModule,
+    PrismaModule,
+    RedisModule,
+    StorageModule,
+    AuthModule,
+    UsersModule,
+    UniversitiesModule,
+    DepartmentsModule,
+    ProfessorsModule,
+    ProfessorEmailsModule,
+    ResearchAreasModule,
+    PublicationsModule,
+    ScholarshipsModule,
+    FavoritesModule,
+    EmailAccountsModule,
+    EmailThreadsModule,
+    EmailMessagesModule,
+    EmailRealtimeModule,
+    InboxSyncModule,
+    AiModule,
+    SearchModule,
+    CreditsModule,
+    SubscriptionsModule,
+    BillingModule,
+    NotificationsModule,
+    AnalyticsModule,
+    StudentProfileModule,
+    AdminModule,
+    HealthModule,
+    WebhooksModule,
+    QueuesModule,
+    CronModule,
+  ],
+})
+export class AppModule {}
