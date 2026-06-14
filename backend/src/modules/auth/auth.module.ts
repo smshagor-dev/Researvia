@@ -6,6 +6,7 @@ import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { EncryptionModule } from '../../shared/encryption/encryption.module';
 import { EmailAccountsModule } from '../email-accounts/email-accounts.module';
+import { StudentProfileModule } from '../student-profile/student-profile.module';
 
 @Global()
 @Module({
@@ -19,6 +20,7 @@ import { EmailAccountsModule } from '../email-accounts/email-accounts.module';
     }),
     EncryptionModule,
     EmailAccountsModule,
+    StudentProfileModule,
   ],
   controllers: [AuthController],
   providers: [AuthService],

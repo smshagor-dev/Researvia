@@ -86,7 +86,14 @@ export class InboxSyncService {
           });
           await tx.emailThread.update({
             where: { id: originalMsg.threadId },
-            data: { status: 'replied', lastMessageAt: new Date(), unreadCount: { increment: 1 }, messageCount: { increment: 1 } },
+            data: {
+              status: 'replied',
+              currentStage: 'replied',
+              replyReceived: true,
+              lastMessageAt: new Date(),
+              unreadCount: { increment: 1 },
+              messageCount: { increment: 1 },
+            },
           });
           await tx.emailMessage.update({
             where: { id: originalMsg.id },
@@ -168,7 +175,14 @@ export class InboxSyncService {
           }),
           this.prisma.emailThread.update({
             where: { id: originalMsg.threadId },
-            data: { status: 'replied', lastMessageAt: new Date(), unreadCount: { increment: 1 }, messageCount: { increment: 1 } },
+            data: {
+              status: 'replied',
+              currentStage: 'replied',
+              replyReceived: true,
+              lastMessageAt: new Date(),
+              unreadCount: { increment: 1 },
+              messageCount: { increment: 1 },
+            },
           }),
           this.prisma.emailMessage.update({
             where: { id: originalMsg.id },
@@ -210,15 +224,32 @@ export class InboxSyncService {
         const existing = await this.prisma.emailMessage.findFirst({ where: { outlookMessageId: msg.id } });
         if (existing) continue;
 
-        await this.prisma.emailMessage.create({
-          data: {
-            threadId: originalMsg.threadId, userId,
-            direction: 'inbound', fromEmail: msg.from?.emailAddress?.address || '',
-            toEmails: [], subject: msg.subject,
-            bodyText: msg.bodyPreview, bodyHtml: msg.body?.content,
-            outlookMessageId: msg.id, status: 'delivered',
-          },
-        });
+        await this.prisma.$transaction([
+          this.prisma.emailMessage.create({
+            data: {
+              threadId: originalMsg.threadId, userId,
+              direction: 'inbound', fromEmail: msg.from?.emailAddress?.address || '',
+              toEmails: [], subject: msg.subject,
+              bodyText: msg.bodyPreview, bodyHtml: msg.body?.content,
+              outlookMessageId: msg.id, status: 'delivered',
+            },
+          }),
+          this.prisma.emailThread.update({
+            where: { id: originalMsg.threadId },
+            data: {
+              status: 'replied',
+              currentStage: 'replied',
+              replyReceived: true,
+              lastMessageAt: new Date(),
+              unreadCount: { increment: 1 },
+              messageCount: { increment: 1 },
+            },
+          }),
+          this.prisma.emailMessage.update({
+            where: { id: originalMsg.id },
+            data: { repliedAt: new Date(), status: 'replied' },
+          }),
+        ]);
         synced++;
       }
 

@@ -4,10 +4,14 @@ import { UsersService } from './users.service';
 import { StorageModule } from '../storage/storage.module';
 import { JwtModule } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
+import { EmailAccountsModule } from '../email-accounts/email-accounts.module';
+import { StudentProfileModule } from '../student-profile/student-profile.module';
 
 @Module({
   imports: [
     StorageModule,
+    EmailAccountsModule,
+    StudentProfileModule,
     JwtModule.registerAsync({
       inject: [ConfigService],
       useFactory: (c: ConfigService) => ({ secret: c.get('JWT_SECRET', 'dev-secret') }),

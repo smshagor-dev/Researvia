@@ -77,6 +77,21 @@ export class UsersController {
     return this.usersService.markAllNotificationsRead(userId);
   }
 
+  @Get('me/sessions')
+  async getSessions(@CurrentUser() user: any) {
+    return this.usersService.getSessions(user.id, user.sessionId);
+  }
+
+  @Delete('me/sessions/:id')
+  async revokeSession(@CurrentUser('id') userId: string, @Param('id') id: string) {
+    return this.usersService.revokeSession(userId, id);
+  }
+
+  @Get('me/export')
+  async exportData(@CurrentUser('id') userId: string) {
+    return this.usersService.exportData(userId);
+  }
+
   @Delete('me/account')
   async deleteAccount(@CurrentUser('id') userId: string) {
     return this.usersService.deleteAccount(userId);

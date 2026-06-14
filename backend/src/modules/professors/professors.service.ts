@@ -1,7 +1,11 @@
-import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../shared/prisma/prisma.service';
 import { RedisService } from '../../shared/redis/redis.service';
 import { PaginationService } from '../../shared/pagination/pagination.service';
+import { CreditsService } from '../credits/credits.service';
+import { UsageMeteringService } from '../billing/usage-metering.service';
+import { AuditLogService } from '../security/audit-log.service';
+import { professorRevealCounter } from '../observability/metrics.registry';
 
 export interface ProfessorFilters {
   q?: string;
@@ -26,6 +30,9 @@ export class ProfessorsService {
     private readonly prisma: PrismaService,
     private readonly redis: RedisService,
     private readonly pagination: PaginationService,
+    private readonly credits: CreditsService,
+    private readonly usage: UsageMeteringService,
+    private readonly audit: AuditLogService,
   ) {}
 
   async findAll(filters: ProfessorFilters, userId?: string) {
@@ -33,7 +40,7 @@ export class ProfessorsService {
     const perPage = this.pagination.clampPerPage(filters.perPage || 20);
     const skip = this.pagination.getSkip(page, perPage);
 
-    const where: any = { status: 'active' };
+    const where: any = { status: 'active', isPublic: true, verificationStatus: 'verified' };
 
     if (filters.q) {
       where.OR = [
@@ -81,12 +88,13 @@ export class ProfessorsService {
     ]);
 
     const data = professors.map((p) => this.formatProfessorList(p));
-    return this.pagination.paginate(data, total, page, perPage);
+    const enriched = userId ? await this.attachProfessorMatches(userId, data) : data;
+    return this.pagination.paginate(enriched, total, page, perPage);
   }
 
-  async findOne(id: string) {
+  async findOne(id: string, userId?: string) {
     const professor = await this.prisma.professor.findFirst({
-      where: { id, status: 'active' },
+      where: { id, status: 'active', isPublic: true, verificationStatus: 'verified' },
       include: {
         university: { include: { country: true } },
         department: true,
@@ -102,24 +110,136 @@ export class ProfessorsService {
       },
     });
     if (!professor) throw new NotFoundException('Professor not found');
-    return professor;
+    if (!userId) {
+      return professor;
+    }
+
+    const match = await this.prisma.matchScore.findUnique({
+      where: {
+        userId_targetType_targetId: {
+          userId,
+          targetType: 'professor',
+          targetId: id,
+        },
+      },
+    });
+
+    return {
+      ...professor,
+      matchScore: match
+        ? {
+            score: match.score,
+            scoreBand: match.scoreBand,
+            explanation: match.explanation,
+            aiSummary: match.aiSummary,
+            breakdown: match.breakdownJson,
+            strengths: match.strengthsJson,
+            weaknesses: match.weaknessesJson,
+            recommendations: match.recommendationsJson,
+            calculatedAt: match.calculatedAt,
+          }
+        : null,
+    };
   }
 
   async revealEmail(professorId: string, userId: string) {
-    const emails = await this.prisma.professorEmail.findMany({
-      where: { professorId, isVerified: true },
-      select: { email: true, type: true, isPrimary: true },
-      orderBy: { isPrimary: 'desc' },
+    const professor = await this.prisma.professor.findFirst({
+      where: { id: professorId, status: 'active', isPublic: true, verificationStatus: 'verified' },
+      include: {
+        emails: {
+          where: { verificationStatus: 'verified', isVerified: true },
+          orderBy: [{ isPrimary: 'desc' }, { confidenceScore: 'desc' }, { createdAt: 'asc' }],
+        },
+      },
     });
-    if (!emails.length) {
+
+    if (!professor) {
+      throw new NotFoundException('Professor not found');
+    }
+
+    const emailRecord = professor.emails[0];
+    if (!emailRecord) {
       return { emails: [], message: 'No verified emails available for this professor' };
     }
-    return { emails };
+
+    const existingReveal = await this.prisma.emailRevealLog.findUnique({
+      where: {
+        userId_professorId: {
+          userId,
+          professorId,
+        },
+      },
+      include: { email: true },
+    });
+
+    if (existingReveal) {
+      return {
+        emails: [{ email: existingReveal.email.email, type: existingReveal.email.type, isPrimary: existingReveal.email.isPrimary }],
+        alreadyRevealed: true,
+        creditsCharged: 0,
+      };
+    }
+
+    await this.usage.assertWithinLimit(userId, 'professor_reveal');
+    const balance = await this.credits.getBalance(userId);
+    if ((balance as any).balance < 5) {
+      throw new BadRequestException({ code: 'INSUFFICIENT_CREDITS', message: `Insufficient credits. Need 5, have ${(balance as any).balance}` });
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      const credits = await tx.credits.findUnique({ where: { userId } });
+      if (!credits || credits.balance < 5) {
+        throw new BadRequestException({ code: 'INSUFFICIENT_CREDITS', message: `Insufficient credits. Need 5, have ${credits?.balance || 0}` });
+      }
+
+      const newBalance = credits.balance - 5;
+      await tx.credits.update({
+        where: { userId },
+        data: { balance: newBalance, lifetimeSpent: { increment: 5 } },
+      });
+      await tx.creditTransaction.create({
+        data: {
+          userId,
+          walletId: credits.id,
+          amount: -5,
+          type: 'professor_reveal',
+          referenceId: professorId,
+          referenceType: 'professors',
+          reason: 'Professor email reveal',
+          description: 'Professor email reveal',
+          metadataJson: { emailId: emailRecord.id } as any,
+          balanceAfter: newBalance,
+        },
+      });
+      await tx.emailRevealLog.create({
+        data: {
+          userId,
+          professorId,
+          emailId: emailRecord.id,
+          creditsUsed: 5,
+        },
+      });
+    });
+    await this.usage.recordUsage(userId, 'professor_reveal');
+    professorRevealCounter.inc({ status: 'success' });
+    await this.audit.logUserAction({
+      userId,
+      action: 'professor.reveal',
+      entityType: 'professor',
+      entityId: professorId,
+      metadata: { emailId: emailRecord.id, creditsCharged: 5 },
+    });
+
+    return {
+      emails: [{ email: emailRecord.email, type: emailRecord.type, isPrimary: emailRecord.isPrimary }],
+      alreadyRevealed: false,
+      creditsCharged: 5,
+    };
   }
 
   async getSimilarProfessors(professorId: string, limit = 3) {
     const prof = await this.prisma.professor.findFirst({
-      where: { id: professorId },
+      where: { id: professorId, status: 'active', isPublic: true, verificationStatus: 'verified' },
       include: { researchAreas: { take: 3, select: { researchAreaId: true } } },
     });
     if (!prof) return [];
@@ -129,6 +249,8 @@ export class ProfessorsService {
       where: {
         id: { not: professorId },
         status: 'active',
+        isPublic: true,
+        verificationStatus: 'verified',
         researchAreas: { some: { researchAreaId: { in: areaIds } } },
       },
       take: limit,
@@ -158,11 +280,18 @@ export class ProfessorsService {
 
   async getStats() {
     const [total, withVerifiedEmail, accepting] = await Promise.all([
-      this.prisma.professor.count({ where: { status: 'active' } }),
+      this.prisma.professor.count({ where: { status: 'active', isPublic: true, verificationStatus: 'verified' } }),
       this.prisma.professor.count({
-        where: { status: 'active', emails: { some: { isVerified: true } } },
+        where: {
+          status: 'active',
+          isPublic: true,
+          verificationStatus: 'verified',
+          emails: { some: { isVerified: true } },
+        },
       }),
-      this.prisma.professor.count({ where: { status: 'active', acceptingStudents: 'yes' } }),
+      this.prisma.professor.count({
+        where: { status: 'active', isPublic: true, verificationStatus: 'verified', acceptingStudents: 'yes' },
+      }),
     ]);
     return { total, withVerifiedEmail, accepting };
   }
@@ -200,5 +329,37 @@ export class ProfessorsService {
       })),
       hasVerifiedEmail: p._count?.emails > 0,
     };
+  }
+
+  private async attachProfessorMatches(userId: string, professors: any[]) {
+    if (!professors.length) {
+      return professors;
+    }
+
+    const matches = await this.prisma.matchScore.findMany({
+      where: {
+        userId,
+        targetType: 'professor',
+        targetId: { in: professors.map((item) => item.id) },
+      },
+    });
+
+    const matchMap = new Map(matches.map((item) => [item.targetId, item]));
+    return professors.map((professor) => {
+      const match = matchMap.get(professor.id);
+      return {
+        ...professor,
+        matchScore: match
+          ? {
+              score: match.score,
+              scoreBand: match.scoreBand,
+              explanation: match.explanation,
+              aiSummary: match.aiSummary,
+              breakdown: match.breakdownJson,
+              calculatedAt: match.calculatedAt,
+            }
+          : null,
+      };
+    });
   }
 }

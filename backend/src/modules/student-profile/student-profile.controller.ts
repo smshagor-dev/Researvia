@@ -25,10 +25,11 @@ import {
   UploadStudentDocumentDto,
 } from './dto/student-profile.dto';
 import { StudentProfileService } from './student-profile.service';
+import { StudentAccessGuard } from './student-access.guard';
 
 @ApiTags('Student Profile')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, StudentAccessGuard)
 @Controller('student')
 export class StudentProfileController {
   constructor(private readonly studentProfileService: StudentProfileService) {}

@@ -37,7 +37,7 @@ export default function SubscriptionPage() {
   };
 
   return (
-    <div className="p-6 max-w-5xl mx-auto">
+    <div className="mx-auto w-full max-w-[1680px] px-6 py-6 xl:px-8">
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2"><Zap className="w-6 h-6 text-blue-500" /> Subscription & Credits</h1>
         <p className="text-gray-500 text-sm mt-1">Manage your plan and credit usage</p>

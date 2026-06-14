@@ -6,17 +6,11 @@ import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { ProfessorsService } from './professors.service';
 import { JwtAuthGuard, OptionalJwtGuard, RolesGuard } from '../../common/guards/jwt-auth.guard';
 import { CurrentUser, Roles } from '../../common/decorators';
-import { CreditsService } from '../credits/credits.service';
-import { JwtModule } from '@nestjs/jwt';
-import { ConfigService } from '@nestjs/config';
 
 @ApiTags('Professors')
 @Controller('professors')
 export class ProfessorsController {
-  constructor(
-    private readonly professorsService: ProfessorsService,
-    private readonly creditsService: CreditsService,
-  ) {}
+  constructor(private readonly professorsService: ProfessorsService) {}
 
   @Get()
   @UseGuards(OptionalJwtGuard)
@@ -37,8 +31,8 @@ export class ProfessorsController {
   @Get(':id')
   @UseGuards(OptionalJwtGuard)
   @ApiOperation({ summary: 'Get professor detail' })
-  async findOne(@Param('id') id: string) {
-    return this.professorsService.findOne(id);
+  async findOne(@Param('id') id: string, @CurrentUser() user: any) {
+    return this.professorsService.findOne(id, user?.id);
   }
 
   @Get(':id/similar')
@@ -53,8 +47,6 @@ export class ProfessorsController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Reveal professor email (costs 5 credits)' })
   async revealEmail(@Param('id') id: string, @CurrentUser('id') userId: string) {
-    // Check and deduct credits
-    await this.creditsService.deduct(userId, 5, 'professor_reveal', id, 'professors', 'Professor email reveal');
     return this.professorsService.revealEmail(id, userId);
   }
 

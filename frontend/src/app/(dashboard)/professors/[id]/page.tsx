@@ -2,8 +2,8 @@
 
 import { useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { useProfessor } from '@/lib/hooks';
-import { aiApi } from '@/lib/api';
+import { useProfessor, useProfessorMatch } from '@/lib/hooks';
+import { aiApi, outreachApi } from '@/lib/api';
 import { professorsApi, favoritesApi } from '@/lib/api';
 import Link from 'next/link';
 import {
@@ -19,17 +19,21 @@ export default function ProfessorDetailPage() {
   const router = useRouter();
   const qc = useQueryClient();
   const { data, isLoading, error } = useProfessor(id);
+  const professorMatchQuery = useProfessorMatch(id);
   const [activeTab, setActiveTab] = useState<'overview' | 'publications' | 'contact' | 'ai'>('overview');
   const [emails, setEmails] = useState<any[]>([]);
   const [revealLoading, setRevealLoading] = useState(false);
   const [revealError, setRevealError] = useState('');
   const [saved, setSaved] = useState(false);
   const [aiEmail, setAiEmail] = useState('');
+  const [aiSubject, setAiSubject] = useState('');
   const [aiLoading, setAiLoading] = useState(false);
+  const [outreachSending, setOutreachSending] = useState(false);
   const [copied, setCopied] = useState(false);
   const [matchScore, setMatchScore] = useState<any>(null);
 
   const prof = data as any;
+  const liveMatchScore = matchScore || (professorMatchQuery.data as any)?.match || prof?.matchScore || null;
 
   const handleRevealEmail = async () => {
     setRevealLoading(true);
@@ -58,40 +62,40 @@ export default function ProfessorDetailPage() {
   const handleGenerateEmail = async () => {
     setAiLoading(true);
     setAiEmail('');
-    const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/v1';
-    const token = localStorage.getItem('access_token');
-
     try {
-      const response = await fetch(`${API_URL}/ai/generate-outreach`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ professorId: id, tone: 'formal', wordLimit: 250 }),
-      });
-
-      const reader = response.body?.getReader();
-      const decoder = new TextDecoder();
-      let fullText = '';
-
-      while (reader) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        const chunk = decoder.decode(value);
-        const lines = chunk.split('\n').filter(l => l.startsWith('data:'));
-        for (const line of lines) {
-          const data = line.slice(5).trim();
-          try {
-            const parsed = JSON.parse(data);
-            if (parsed.text) {
-              fullText += parsed.text;
-              setAiEmail(fullText);
-            }
-          } catch {}
-        }
-      }
+      const generated = await outreachApi.generate({ professorId: id, template: 'initial' }) as any;
+      setAiSubject(generated.subject);
+      setAiEmail(generated.body);
     } catch (e: any) {
       if (e?.message?.includes('401')) router.push('/login');
     } finally {
       setAiLoading(false);
+    }
+  };
+
+  const handleStartOutreach = async () => {
+    setOutreachSending(true);
+    try {
+      let subject = aiSubject;
+      let body = aiEmail;
+      if (!body) {
+        const generated = await outreachApi.generate({ professorId: id, template: 'initial' }) as any;
+        subject = generated.subject;
+        body = generated.body;
+        setAiSubject(subject);
+        setAiEmail(body);
+      }
+      await outreachApi.send({
+        professorId: id,
+        subject: subject || `Prospective research opportunity with ${prof.fullName}`,
+        body,
+        toEmail: emails[0]?.email,
+      });
+      router.push('/outreach');
+    } catch (e: any) {
+      alert(e.response?.data?.error?.message || 'Failed to start outreach');
+    } finally {
+      setOutreachSending(false);
     }
   };
 
@@ -128,7 +132,7 @@ export default function ProfessorDetailPage() {
   const accepting = ACCEPTING_LABELS[prof.acceptingStudents] || ACCEPTING_LABELS.unknown;
 
   return (
-    <div className="p-6 max-w-6xl mx-auto">
+    <div className="mx-auto w-full max-w-[1680px] px-6 py-6 xl:px-8">
       <Link href="/professors" className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700 mb-6">
         <ChevronLeft className="w-4 h-4" /> Back to professors
       </Link>
@@ -161,6 +165,11 @@ export default function ProfessorDetailPage() {
               {prof.fundingStatus === 'funded' && (
                 <span className="text-sm px-3 py-1 rounded-full bg-green-50 text-green-700 border border-green-200 font-medium">
                   💰 Funded
+                </span>
+              )}
+              {liveMatchScore?.score != null && (
+                <span className="text-sm px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 font-medium">
+                  Match {liveMatchScore.score}/100
                 </span>
               )}
             </div>
@@ -312,41 +321,44 @@ export default function ProfessorDetailPage() {
               <h3 className="font-semibold text-gray-900 flex items-center gap-2">
                 <Award className="w-4 h-4 text-purple-500" /> Research Match Score
               </h3>
-              {!matchScore && (
+              {!liveMatchScore && (
                 <button onClick={handleGetMatchScore}
                   className="px-4 py-2 bg-purple-50 text-purple-700 text-sm font-medium rounded-lg hover:bg-purple-100 transition flex items-center gap-1.5">
                   <Sparkles className="w-4 h-4" /> Calculate Match
                 </button>
               )}
             </div>
-            {matchScore ? (
+            {liveMatchScore ? (
               <div>
                 <div className="flex items-center gap-4 mb-4">
                   <div className="relative w-20 h-20">
                     <svg className="w-20 h-20 -rotate-90" viewBox="0 0 36 36">
                       <circle cx="18" cy="18" r="15.9" fill="none" stroke="#e5e7eb" strokeWidth="3" />
                       <circle cx="18" cy="18" r="15.9" fill="none" stroke="#6366f1" strokeWidth="3"
-                        strokeDasharray={`${matchScore.score} 100`} strokeLinecap="round" />
+                        strokeDasharray={`${liveMatchScore.score} 100`} strokeLinecap="round" />
                     </svg>
                     <div className="absolute inset-0 flex items-center justify-center">
-                      <span className="text-lg font-bold text-gray-900">{matchScore.score}</span>
+                      <span className="text-lg font-bold text-gray-900">{liveMatchScore.score}</span>
                     </div>
                   </div>
                   <div className="flex-1">
-                    <p className="text-sm text-gray-600 mb-2">{matchScore.explanation}</p>
+                    <p className="text-sm text-gray-600 mb-2">{liveMatchScore.aiSummary || liveMatchScore.explanation}</p>
                     <div className="space-y-2">
-                      {Object.entries(matchScore.breakdown || {}).map(([key, val]: any) => (
+                      {Object.entries(liveMatchScore.breakdown || {}).map(([key, val]: any) => (
                         <div key={key}>
                           <div className="flex justify-between text-xs text-gray-500 mb-1">
                             <span className="capitalize">{key.replace(/([A-Z])/g, ' $1').trim()}</span>
-                            <span className="font-medium">{val}%</span>
+                            <span className="font-medium">{val?.score ?? val}%</span>
                           </div>
                           <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                            <div className="h-full bg-indigo-500 rounded-full transition-all" style={{ width: `${val}%` }} />
+                            <div className="h-full bg-indigo-500 rounded-full transition-all" style={{ width: `${val?.score ?? val}%` }} />
                           </div>
                         </div>
                       ))}
                     </div>
+                    {(liveMatchScore.recommendations || []).slice(0, 3).map((item: string) => (
+                      <p key={item} className="mt-2 text-xs text-gray-500">• {item}</p>
+                    ))}
                   </div>
                 </div>
               </div>
@@ -364,11 +376,17 @@ export default function ProfessorDetailPage() {
               <button onClick={handleGenerateEmail} disabled={aiLoading}
                 className="px-4 py-2 gradient-primary text-white text-sm font-medium rounded-lg hover:opacity-90 disabled:opacity-60 transition flex items-center gap-1.5">
                 {aiLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
-                {aiLoading ? 'Generating...' : 'Generate (10 credits)'}
+                {aiLoading ? 'Generating...' : 'Generate Email'}
+              </button>
+              <button onClick={handleStartOutreach} disabled={outreachSending || aiLoading}
+                className="px-4 py-2 bg-emerald-600 text-white text-sm font-medium rounded-lg hover:bg-emerald-700 disabled:opacity-60 transition flex items-center gap-1.5">
+                {outreachSending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />}
+                Start Outreach
               </button>
             </div>
             {aiEmail && (
               <div className="relative">
+                {aiSubject && <p className="mb-2 text-sm font-semibold text-gray-900">{aiSubject}</p>}
                 <pre className={cn('text-sm text-gray-700 whitespace-pre-wrap bg-gray-50 rounded-lg p-4 font-sans leading-relaxed', aiLoading && 'ai-streaming')}>
                   {aiEmail}
                 </pre>

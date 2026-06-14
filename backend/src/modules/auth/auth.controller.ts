@@ -19,8 +19,8 @@ export class AuthController {
   @Post('register')
   @Public()
   @ApiOperation({ summary: 'Register new user' })
-  async register(@Body() dto: RegisterDto) {
-    return this.authService.register(dto);
+  async register(@Body() dto: RegisterDto, @Req() req: any) {
+    return this.authService.register(dto, req.ip, req.get('user-agent'));
   }
 
   @Post('login')
@@ -28,7 +28,7 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Login with email/password' })
   async login(@Body() dto: LoginDto, @Req() req: any) {
-    return this.authService.login(dto, req.ip);
+    return this.authService.login(dto, req.ip, req.get('user-agent'));
   }
 
   @Post('2fa/verify')
@@ -44,8 +44,8 @@ export class AuthController {
   @Public()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Refresh access token' })
-  async refresh(@Body() dto: RefreshTokenDto) {
-    return this.authService.refresh(dto.refreshToken);
+  async refresh(@Body() dto: RefreshTokenDto, @Req() req: any) {
+    return this.authService.refresh(dto.refreshToken, req.ip, req.get('user-agent'));
   }
 
   @Post('logout')

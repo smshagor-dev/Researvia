@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../shared/prisma/prisma.service';
 import { RedisService } from '../../shared/redis/redis.service';
 import { Response } from 'express';
+import { MatchEngineService } from './match-engine.service';
 
 @Injectable()
 export class AiService {
@@ -12,6 +13,7 @@ export class AiService {
     private readonly prisma: PrismaService,
     private readonly redis: RedisService,
     private readonly config: ConfigService,
+    private readonly matches: MatchEngineService,
   ) {}
 
   async generateOutreach(
@@ -90,92 +92,13 @@ Keep it under 150 words. Start with "Dear Prof. ${thread.professor?.lastName || 
   }
 
   async getMatchScore(userId: string, professorId: string) {
-    const cacheKey = `match:${userId}:${professorId}`;
-    const cached = await this.redis.get(cacheKey);
-    if (cached) return JSON.parse(cached);
-
-    const [professor, userProfile] = await Promise.all([
-      this.prisma.professor.findFirst({
-        where: { id: professorId },
-        include: { researchAreas: { include: { researchArea: true } } },
-      }),
-      this.prisma.userProfile.findUnique({ where: { userId } }),
-    ]);
-
-    if (!professor || !userProfile) {
-      return { score: 0, breakdown: {}, explanation: 'Insufficient profile data' };
-    }
-
-    const userInterests: string[] = (userProfile.researchInterests as string[]) || [];
-    const profAreas = professor.researchAreas.map((r) => r.researchArea.slug);
-
-    // Research overlap (Jaccard similarity)
-    const intersection = userInterests.filter((i) => profAreas.includes(i));
-    const union = [...new Set([...userInterests, ...profAreas])];
-    const researchOverlap = union.length > 0 ? Math.round((intersection.length / union.length) * 100) : 0;
-
-    // Funding match
-    let fundingMatch = 50;
-    if (professor.fundingStatus === 'funded') fundingMatch = 100;
-    else if (professor.fundingStatus === 'unfunded') fundingMatch = 0;
-
-    // Accepting students
-    let acceptingMatch = 50;
-    if (professor.acceptingStudents === 'yes') acceptingMatch = 100;
-    else if (professor.acceptingStudents === 'no') acceptingMatch = 0;
-
-    // Composite score
-    const score = Math.round(
-      researchOverlap * 0.5 + fundingMatch * 0.25 + acceptingMatch * 0.25,
-    );
-
-    const result = {
-      score,
-      breakdown: { researchOverlap, fundingMatch, acceptingMatch },
-      explanation: this.buildMatchExplanation(score, researchOverlap, fundingMatch, acceptingMatch, professor, intersection),
-    };
-
-    await this.redis.set(cacheKey, JSON.stringify(result), 3600 * 24);
-    return result;
+    const result = await this.matches.getProfessorMatch(userId, professorId);
+    return result.match;
   }
 
   async getScholarshipRecommendations(userId: string) {
-    const cacheKey = `scholarship_matches:${userId}`;
-    const cached = await this.redis.get(cacheKey);
-    if (cached) return JSON.parse(cached);
-
-    const userProfile = await this.prisma.userProfile.findUnique({ where: { userId } });
-    if (!userProfile) return [];
-
-    const userInterests: string[] = (userProfile.researchInterests as string[]) || [];
-    const targetCountries: string[] = (userProfile.targetCountries as string[]) || [];
-    const targetDegree = userProfile.targetDegree;
-
-    const scholarships = await this.prisma.scholarship.findMany({
-      where: { isActive: true, isExpired: false },
-      include: { country: true, university: true },
-      take: 100,
-    });
-
-    const scored = scholarships.map((s) => {
-      let score = 0;
-      const degreeLevels = s.degreeLevels as string[];
-      if (targetDegree && degreeLevels.includes(targetDegree)) score += 40;
-      if (targetCountries.length && s.country && targetCountries.includes(s.country.isoAlpha2)) score += 30;
-      if (s.fundingType === 'fully_funded') score += 20;
-      const fieldsOfStudy = (s.fieldsOfStudy as string[]) || [];
-      const overlap = userInterests.filter((i) => fieldsOfStudy.includes(i));
-      score += Math.min(10, overlap.length * 5);
-      if (s.deadline) {
-        const daysUntil = Math.floor((new Date(s.deadline).getTime() - Date.now()) / 86400000);
-        if (daysUntil > 0 && daysUntil < 30) score += 5; // deadline soon bonus
-      }
-      return { ...s, matchScore: score };
-    });
-
-    const top = scored.sort((a, b) => b.matchScore - a.matchScore).slice(0, 10);
-    await this.redis.set(cacheKey, JSON.stringify(top), 3600 * 24);
-    return top;
+    const result = await this.matches.getScholarshipMatches(userId, { page: 1, perPage: 10 });
+    return result.data;
   }
 
   private async streamFromAI(systemPrompt: string, userPrompt: string, res: Response) {
@@ -243,19 +166,4 @@ Keep it under 150 words. Start with "Dear Prof. ${thread.professor?.lastName || 
     res.end();
   }
 
-  private buildMatchExplanation(
-    score: number, researchOverlap: number, fundingMatch: number,
-    acceptingMatch: number, professor: any, intersection: string[],
-  ): string {
-    const parts: string[] = [];
-    if (researchOverlap > 60) parts.push(`Strong research alignment in: ${intersection.slice(0, 3).join(', ')}`);
-    else if (researchOverlap > 30) parts.push('Moderate research overlap');
-    else parts.push('Limited research overlap');
-
-    if (fundingMatch === 100) parts.push('Professor has confirmed funding');
-    if (acceptingMatch === 100) parts.push('Currently accepting students');
-    else if (acceptingMatch === 0) parts.push('Not currently accepting students');
-
-    return `Match score ${score}/100. ${parts.join('. ')}.`;
-  }
 }

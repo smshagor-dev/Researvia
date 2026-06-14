@@ -1,5 +1,7 @@
 import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../shared/prisma/prisma.service';
+import { creditUsageCounter } from '../observability/metrics.registry';
 
 @Injectable()
 export class CreditsService {
@@ -18,6 +20,7 @@ export class CreditsService {
     referenceId?: string,
     referenceType?: string,
     description?: string,
+    metadataJson?: Prisma.InputJsonValue,
   ) {
     const credits = await this.prisma.credits.findUnique({ where: { userId } });
     if (!credits) throw new NotFoundException('Credits not found');
@@ -32,13 +35,25 @@ export class CreditsService {
         data: { balance: newBalance, lifetimeSpent: { increment: amount } },
       }),
       this.prisma.creditTransaction.create({
-        data: { userId, amount: -amount, type, referenceId, referenceType, description, balanceAfter: newBalance },
+        data: {
+          userId,
+          walletId: credits.id,
+          amount: -amount,
+          type,
+          referenceId,
+          referenceType,
+          reason: description,
+          description,
+          metadataJson,
+          balanceAfter: newBalance,
+        },
       }),
     ]);
+    creditUsageCounter.inc({ type: String(type) }, amount);
     return { balance: newBalance };
   }
 
-  async grant(userId: string, amount: number, type: any, description?: string) {
+  async grant(userId: string, amount: number, type: any, description?: string, metadataJson?: Prisma.InputJsonValue) {
     const credits = await this.prisma.credits.upsert({
       where: { userId },
       update: { balance: { increment: amount }, lifetimeEarned: { increment: amount } },
@@ -46,8 +61,18 @@ export class CreditsService {
     });
 
     await this.prisma.creditTransaction.create({
-      data: { userId, amount, type, description, balanceAfter: credits.balance },
+      data: {
+        userId,
+        walletId: credits.id,
+        amount,
+        type,
+        reason: description,
+        description,
+        metadataJson,
+        balanceAfter: credits.balance,
+      },
     });
+    creditUsageCounter.inc({ type: String(type) }, amount);
     return { balance: credits.balance };
   }
 

@@ -6,6 +6,7 @@ import {
 import { PrismaService } from '../../shared/prisma/prisma.service';
 import { StorageService } from '../storage/storage.service';
 import { EmailAccountsService } from '../email-accounts/email-accounts.service';
+import { ProfessorSyncQueueService } from '../queues/professor-sync-queue.service';
 import {
   ExperienceType,
   Prisma,
@@ -19,13 +20,15 @@ export class StudentProfileService {
     private readonly prisma: PrismaService,
     private readonly storage: StorageService,
     private readonly emailAccounts: EmailAccountsService,
+    private readonly queues: ProfessorSyncQueueService,
   ) {}
 
   async getProfile(userId: string) {
+    await this.ensureStudentProfileForUserId(userId);
     const profile = await this.prisma.studentProfile.findUnique({
       where: { userId },
       include: {
-        education: true,
+        educations: { orderBy: [{ isCurrent: 'desc' }, { sortOrder: 'asc' }, { createdAt: 'asc' }] },
         researchInterest: true,
         skills: true,
         experiences: true,
@@ -42,7 +45,7 @@ export class StudentProfileService {
     }
 
     return {
-      profile,
+      profile: this.serializeProfile(profile),
       completeness: this.buildCompleteness(profile),
     };
   }
@@ -76,11 +79,7 @@ export class StudentProfileService {
 
   async updateAcademic(userId: string, dto: any) {
     const profile = await this.ensureStudentProfile(userId);
-    await this.prisma.studentEducation.upsert({
-      where: { studentProfileId: profile.id },
-      update: this.mapAcademic(dto),
-      create: { studentProfileId: profile.id, ...this.mapAcademic(dto) },
-    });
+    await this.replaceEducationBlock(profile.id, dto);
     return this.recalculateAndGet(userId);
   }
 
@@ -161,6 +160,16 @@ export class StudentProfileService {
     if (dto.research) await this.updateResearch(userId, dto.research);
     if (dto.skills) await this.updateSkills(userId, dto.skills);
     if (dto.preferences) await this.updatePreferences(userId, dto.preferences);
+    if (dto.onboardingStep || dto.onboardingCompleted !== undefined) {
+      const profile = await this.ensureStudentProfile(userId);
+      await this.prisma.studentProfile.update({
+        where: { id: profile.id },
+        data: {
+          onboardingStep: dto.onboardingStep ?? profile.onboardingStep,
+          onboardingCompleted: dto.onboardingCompleted ?? profile.onboardingCompleted,
+        },
+      });
+    }
     return this.recalculateAndGet(userId);
   }
 
@@ -182,6 +191,8 @@ export class StudentProfileService {
       },
     });
 
+    await this.queues.enqueueAiProfileAnalysis({ userId, source: 'profile-update' });
+
     return {
       document: created,
       signedUrl: await this.storage.getSignedUrl(key),
@@ -197,13 +208,21 @@ export class StudentProfileService {
 
     await this.storage.delete(document.fileKey);
     await this.prisma.studentDocument.delete({ where: { id: documentId } });
+    await this.queues.enqueueAiProfileAnalysis({ userId, source: 'profile-update' });
     return { success: true };
   }
 
   async getCompleteness(userId: string) {
+    await this.ensureStudentProfileForUserId(userId);
     const profile = await this.prisma.studentProfile.findUnique({
       where: { userId },
-      include: { education: true, researchInterest: true, skills: true, documents: true, preference: true },
+      include: {
+        educations: { orderBy: [{ isCurrent: 'desc' }, { sortOrder: 'asc' }, { createdAt: 'asc' }] },
+        researchInterest: true,
+        skills: true,
+        documents: true,
+        preference: true,
+      },
     });
     if (!profile) return this.emptyCompleteness();
     return this.buildCompleteness(profile);
@@ -229,14 +248,17 @@ export class StudentProfileService {
         orderBy: { updatedAt: 'desc' },
         include: {
           user: { select: { id: true, email: true, status: true, createdAt: true } },
-          education: true,
+          educations: { orderBy: [{ isCurrent: 'desc' }, { sortOrder: 'asc' }, { createdAt: 'asc' }] },
           researchInterest: true,
         },
       }),
       this.prisma.studentProfile.count({ where }),
     ]);
 
-    return { data, meta: { page, perPage, total, lastPage: Math.ceil(total / perPage) } };
+    return {
+      data: data.map((item) => this.serializeProfile(item)),
+      meta: { page, perPage, total, lastPage: Math.ceil(total / perPage) },
+    };
   }
 
   async getStudentByUserId(userId: string) {
@@ -244,7 +266,7 @@ export class StudentProfileService {
       where: { userId },
       include: {
         user: { select: { id: true, email: true, status: true, createdAt: true } },
-        education: true,
+        educations: { orderBy: [{ isCurrent: 'desc' }, { sortOrder: 'asc' }, { createdAt: 'asc' }] },
         researchInterest: true,
         skills: true,
         experiences: true,
@@ -255,7 +277,58 @@ export class StudentProfileService {
       },
     });
     if (!profile) throw new NotFoundException('Student profile not found');
-    return { profile, completeness: this.buildCompleteness(profile) };
+    return { profile: this.serializeProfile(profile), completeness: this.buildCompleteness(profile) };
+  }
+
+  async ensureStudentProfileForUserId(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, email: true, fullName: true, role: true },
+    });
+    if (!user) throw new NotFoundException('User not found');
+    return this.ensureStudentProfileForUser(user);
+  }
+
+  async ensureStudentProfileForUser(user: { id: string; email: string; fullName: string; role?: string }) {
+    const normalizedRole = String(user.role || '').toLowerCase();
+    if (!['user', 'student'].includes(normalizedRole)) {
+      return null;
+    }
+
+    const existing = await this.prisma.studentProfile.findUnique({ where: { userId: user.id } });
+    if (existing) return existing;
+
+    return this.prisma.studentProfile.create({
+      data: {
+        userId: user.id,
+        fullName: user.fullName || user.email,
+        nationality: 'Unknown',
+        currentCountry: 'Unknown',
+        onboardingCompleted: false,
+        onboardingStep: 1,
+        profileCompleteness: 0,
+      },
+    });
+  }
+
+  async getStudentSessionMeta(userId: string) {
+    const [profile, systemMailbox] = await Promise.all([
+      this.prisma.studentProfile.findUnique({
+        where: { userId },
+        include: { preference: true },
+      }),
+      this.prisma.emailAccount.findFirst({
+        where: { userId, type: 'SYSTEM' },
+        orderBy: { createdAt: 'asc' },
+      }),
+    ]);
+
+    return {
+      hasStudentProfile: Boolean(profile),
+      studentOnboardingCompleted: Boolean(profile?.onboardingCompleted),
+      profileCompleteness: profile?.profileCompleteness ?? 0,
+      systemMailboxEmail: systemMailbox?.email ?? null,
+    };
   }
 
   private async upsertStudentProfile(
@@ -313,11 +386,7 @@ export class StudentProfileService {
       data: { fullName: basic.fullName || user.fullName },
     });
 
-    await this.prisma.studentEducation.upsert({
-      where: { studentProfileId: profile.id },
-      update: this.mapAcademic(academic),
-      create: { studentProfileId: profile.id, ...this.mapAcademic(academic) },
-    });
+    await this.replaceEducationBlock(profile.id, academic);
 
     await this.prisma.studentResearchInterest.upsert({
       where: { studentProfileId: profile.id },
@@ -334,8 +403,10 @@ export class StudentProfileService {
     }
   }
 
-  private mapAcademic(dto: any) {
+  private mapAcademic(dto: any, isCurrent = false, sortOrder = 0) {
     return {
+      isCurrent,
+      sortOrder,
       degreeLevel: dto.currentDegreeLevel,
       university: dto.currentUniversity,
       department: dto.department,
@@ -350,6 +421,10 @@ export class StudentProfileService {
     };
   }
 
+  private mapAdditionalAcademic(dto: any, sortOrder: number) {
+    return this.mapAcademic(dto, false, sortOrder);
+  }
+
   private mapResearch(dto: any) {
     return {
       primaryArea: dto.primaryResearchArea,
@@ -360,7 +435,7 @@ export class StudentProfileService {
       preferredCountries: dto.preferredStudyCountries,
       preferredUniversities: dto.preferredUniversities || [],
       preferredIntake: dto.preferredIntake,
-      fundingNeed: dto.fundingNeed,
+      fundingNeed: Array.isArray(dto.fundingNeed) ? dto.fundingNeed : (dto.fundingNeed ? [dto.fundingNeed] : []),
     };
   }
 
@@ -418,6 +493,8 @@ export class StudentProfileService {
           year: item.year,
           doi: item.doi,
           url: item.url,
+          publishedAt: item.publishedAt ? new Date(item.publishedAt) : null,
+          description: item.description,
         },
       });
     }
@@ -425,8 +502,25 @@ export class StudentProfileService {
     await this.recalculateCompleteness(profileId);
   }
 
+  private async replaceEducationBlock(profileId: string, dto: any) {
+    const items = [
+      this.mapAcademic(dto, true, 0),
+      ...((dto.additionalEducation || []).map((item: any, index: number) => this.mapAdditionalAcademic(item, index + 1))),
+    ];
+
+    await this.prisma.$transaction([
+      this.prisma.studentEducation.deleteMany({ where: { studentProfileId: profileId } }),
+      ...items.map((item) => this.prisma.studentEducation.create({
+        data: {
+          studentProfileId: profileId,
+          ...item,
+        },
+      })),
+    ]);
+  }
+
   private async ensureStudentProfile(userId: string) {
-    const profile = await this.prisma.studentProfile.findUnique({ where: { userId } });
+    const profile = await this.ensureStudentProfileForUserId(userId);
     if (!profile) throw new NotFoundException('Student profile not found');
     return profile;
   }
@@ -434,13 +528,20 @@ export class StudentProfileService {
   private async recalculateAndGet(userId: string) {
     const profile = await this.ensureStudentProfile(userId);
     await this.recalculateCompleteness(profile.id);
+    await this.queues.enqueueAiProfileAnalysis({ userId, source: 'profile-update' });
     return this.getProfile(userId);
   }
 
   private async recalculateCompleteness(profileId: string) {
     const profile = await this.prisma.studentProfile.findUnique({
       where: { id: profileId },
-      include: { education: true, researchInterest: true, skills: true, documents: true, preference: true },
+      include: {
+        educations: { orderBy: [{ isCurrent: 'desc' }, { sortOrder: 'asc' }, { createdAt: 'asc' }] },
+        researchInterest: true,
+        skills: true,
+        documents: true,
+        preference: true,
+      },
     });
     if (!profile) return;
 
@@ -455,19 +556,20 @@ export class StudentProfileService {
   }
 
   private buildCompleteness(profile: any) {
+    const currentEducation = this.getCurrentEducation(profile);
     const checks = [
       ['fullName', !!profile.fullName],
       ['nationality', !!profile.nationality],
       ['currentCountry', !!profile.currentCountry],
-      ['currentDegreeLevel', !!profile.education?.degreeLevel],
-      ['currentUniversity', !!profile.education?.university],
-      ['department', !!profile.education?.department],
-      ['majorSubject', !!profile.education?.majorSubject],
-      ['expectedGraduationYear', !!profile.education?.expectedGraduationYear],
+      ['currentDegreeLevel', !!currentEducation?.degreeLevel],
+      ['currentUniversity', !!currentEducation?.university],
+      ['department', !!currentEducation?.department],
+      ['majorSubject', !!currentEducation?.majorSubject],
+      ['expectedGraduationYear', !!currentEducation?.expectedGraduationYear],
       ['primaryResearchArea', !!profile.researchInterest?.primaryArea],
       ['interestedDegree', !!profile.researchInterest?.interestedDegree],
       ['preferredStudyCountries', Array.isArray(profile.researchInterest?.preferredCountries) && profile.researchInterest.preferredCountries.length > 0],
-      ['fundingNeed', !!profile.researchInterest?.fundingNeed],
+      ['fundingNeed', Array.isArray(profile.researchInterest?.fundingNeed) && profile.researchInterest.fundingNeed.length > 0],
       ['skills', Array.isArray(profile.skills) && profile.skills.length > 0],
       ['cv', Array.isArray(profile.documents) && profile.documents.some((doc: any) => doc.type === 'CV')],
       ['shortBio', !!profile.shortBio],
@@ -489,6 +591,28 @@ export class StudentProfileService {
 
   private emptyCompleteness() {
     return { percentage: 0, completedFields: [], missingFields: [], recommendedFields: [] };
+  }
+
+  private getCurrentEducation(profile: any) {
+    if (Array.isArray(profile.educations) && profile.educations.length > 0) {
+      return profile.educations.find((item: any) => item.isCurrent) || profile.educations[0];
+    }
+    if (Array.isArray(profile.educationHistory) && profile.educationHistory.length > 0) {
+      return profile.educationHistory.find((item: any) => item.isCurrent) || profile.educationHistory[0];
+    }
+    return profile.education || null;
+  }
+
+  private serializeProfile(profile: any) {
+    const educationHistory = Array.isArray(profile.educations) ? profile.educations : [];
+    const currentEducation = this.getCurrentEducation(profile);
+    const { educations, ...rest } = profile;
+
+    return {
+      ...rest,
+      education: currentEducation,
+      educationHistory,
+    };
   }
 
   private validateDocumentFile(file: Express.Multer.File) {

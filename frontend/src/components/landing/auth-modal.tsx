@@ -7,8 +7,10 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { CheckCircle2, Eye, EyeOff, GraduationCap, Loader2, X } from 'lucide-react';
-import { authApi } from '@/lib/api';
+import { authApi, usersApi } from '@/lib/api';
 import { useLogin } from '@/lib/hooks';
+import { useAuthStore } from '@/lib/stores/authStore';
+import { getPostAuthRedirect } from '@/lib/auth/redirect';
 
 type AuthMode = 'login' | 'register';
 
@@ -44,12 +46,12 @@ const registerSchema = z.object({
 export function AuthModal({ mode, open, onClose, onModeChange }: AuthModalProps) {
   const router = useRouter();
   const login = useLogin();
+  const { setUser } = useAuthStore();
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [needs2FA, setNeeds2FA] = useState(false);
   const [loginError, setLoginError] = useState('');
   const [registerError, setRegisterError] = useState('');
-  const [registerSuccess, setRegisterSuccess] = useState(false);
   const [registerLoading, setRegisterLoading] = useState(false);
 
   const loginForm = useForm({
@@ -90,7 +92,6 @@ export function AuthModal({ mode, open, onClose, onModeChange }: AuthModalProps)
       setNeeds2FA(false);
       setLoginError('');
       setRegisterError('');
-      setRegisterSuccess(false);
       loginForm.reset();
       registerForm.reset();
     }
@@ -107,7 +108,7 @@ export function AuthModal({ mode, open, onClose, onModeChange }: AuthModalProps)
         return;
       }
       onClose();
-      router.push('/dashboard');
+      router.push(getPostAuthRedirect(result.user));
     } catch (error: any) {
       setLoginError(error.response?.data?.error?.message || 'Login failed');
     }
@@ -117,12 +118,17 @@ export function AuthModal({ mode, open, onClose, onModeChange }: AuthModalProps)
     setRegisterError('');
     setRegisterLoading(true);
     try {
-      await authApi.register({
+      const result = await authApi.register({
         fullName: data.fullName,
         email: data.email,
         password: data.password,
       });
-      setRegisterSuccess(true);
+      if (result.accessToken) {
+        const me = await usersApi.getMe();
+        setUser(me);
+      }
+      onClose();
+      router.push(result.nextPath || getPostAuthRedirect(result.user));
     } catch (error: any) {
       setRegisterError(error.response?.data?.error?.message || 'Registration failed');
     } finally {
@@ -215,84 +221,70 @@ export function AuthModal({ mode, open, onClose, onModeChange }: AuthModalProps)
             <section aria-labelledby="auth-modal-title">
               <h2 id="auth-modal-title" className="text-2xl font-bold tracking-tight text-slate-950 dark:text-slate-100">Create your account</h2>
               <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Start with 20 free credits every month.</p>
+              {registerError && <div className="mt-5 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-200">{registerError}</div>}
 
-              {registerSuccess ? (
-                <div className="mt-6 rounded-xl border border-emerald-200 bg-emerald-50 p-5 text-center dark:border-emerald-500/30 dark:bg-emerald-500/10">
-                  <CheckCircle2 className="mx-auto h-12 w-12 text-emerald-600" aria-hidden="true" />
-                  <h3 className="mt-3 text-lg font-bold text-slate-950 dark:text-slate-100">Account created</h3>
-                  <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">Check your email to verify your account, then sign in.</p>
-                  <button type="button" onClick={() => onModeChange('login')} className="mt-4 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-bold text-white transition hover:bg-emerald-700">
-                    Go to Login
-                  </button>
+              <form onSubmit={registerForm.handleSubmit(submitRegister)} className="mt-5 space-y-4">
+                <div>
+                  <label className="mb-1.5 block text-sm font-semibold text-slate-700 dark:text-slate-200">Full Name</label>
+                  <input {...registerForm.register('fullName')} placeholder="Jane Smith" className="w-full rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:placeholder:text-slate-500" />
+                  {registerForm.formState.errors.fullName && <p className="mt-1 text-xs text-red-500">{registerForm.formState.errors.fullName.message as string}</p>}
                 </div>
-              ) : (
-                <>
-                  {registerError && <div className="mt-5 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-200">{registerError}</div>}
 
-                  <form onSubmit={registerForm.handleSubmit(submitRegister)} className="mt-5 space-y-4">
-                    <div>
-                      <label className="mb-1.5 block text-sm font-semibold text-slate-700 dark:text-slate-200">Full Name</label>
-                      <input {...registerForm.register('fullName')} placeholder="Jane Smith" className="w-full rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:placeholder:text-slate-500" />
-                      {registerForm.formState.errors.fullName && <p className="mt-1 text-xs text-red-500">{registerForm.formState.errors.fullName.message as string}</p>}
-                    </div>
+                <div>
+                  <label className="mb-1.5 block text-sm font-semibold text-slate-700 dark:text-slate-200">Email</label>
+                  <input {...registerForm.register('email')} type="email" placeholder="you@example.com" className="w-full rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:placeholder:text-slate-500" />
+                  {registerForm.formState.errors.email && <p className="mt-1 text-xs text-red-500">{registerForm.formState.errors.email.message as string}</p>}
+                </div>
 
-                    <div>
-                      <label className="mb-1.5 block text-sm font-semibold text-slate-700 dark:text-slate-200">Email</label>
-                      <input {...registerForm.register('email')} type="email" placeholder="you@example.com" className="w-full rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:placeholder:text-slate-500" />
-                      {registerForm.formState.errors.email && <p className="mt-1 text-xs text-red-500">{registerForm.formState.errors.email.message as string}</p>}
-                    </div>
-
-                    <div>
-                      <label className="mb-1.5 block text-sm font-semibold text-slate-700 dark:text-slate-200">Password</label>
-                      <PasswordInput registerProps={registerForm.register('password')} show={showPassword} onToggle={() => setShowPassword((value) => !value)} />
-                      {password && (
-                        <div className="mt-2 grid grid-cols-2 gap-1">
-                          {passwordChecks.map((check) => (
-                            <div key={check.label} className={`flex items-center gap-1 text-xs ${check.ok ? 'text-emerald-600' : 'text-slate-400'}`}>
-                              <CheckCircle2 className={`h-3 w-3 ${check.ok ? 'text-emerald-500' : 'text-slate-300'}`} aria-hidden="true" />
-                              {check.label}
-                            </div>
-                          ))}
+                <div>
+                  <label className="mb-1.5 block text-sm font-semibold text-slate-700 dark:text-slate-200">Password</label>
+                  <PasswordInput registerProps={registerForm.register('password')} show={showPassword} onToggle={() => setShowPassword((value) => !value)} />
+                  {password && (
+                    <div className="mt-2 grid grid-cols-2 gap-1">
+                      {passwordChecks.map((check) => (
+                        <div key={check.label} className={`flex items-center gap-1 text-xs ${check.ok ? 'text-emerald-600' : 'text-slate-400'}`}>
+                          <CheckCircle2 className={`h-3 w-3 ${check.ok ? 'text-emerald-500' : 'text-slate-300'}`} aria-hidden="true" />
+                          {check.label}
                         </div>
-                      )}
-                      {registerForm.formState.errors.password && <p className="mt-1 text-xs text-red-500">{registerForm.formState.errors.password.message as string}</p>}
+                      ))}
                     </div>
+                  )}
+                  {registerForm.formState.errors.password && <p className="mt-1 text-xs text-red-500">{registerForm.formState.errors.password.message as string}</p>}
+                </div>
 
-                    <div>
-                      <label className="mb-1.5 block text-sm font-semibold text-slate-700 dark:text-slate-200">Confirm Password</label>
-                      <PasswordInput registerProps={registerForm.register('confirmPassword')} show={showConfirmPassword} onToggle={() => setShowConfirmPassword((value) => !value)} />
-                      {registerForm.formState.errors.confirmPassword && <p className="mt-1 text-xs text-red-500">{registerForm.formState.errors.confirmPassword.message as string}</p>}
-                    </div>
+                <div>
+                  <label className="mb-1.5 block text-sm font-semibold text-slate-700 dark:text-slate-200">Confirm Password</label>
+                  <PasswordInput registerProps={registerForm.register('confirmPassword')} show={showConfirmPassword} onToggle={() => setShowConfirmPassword((value) => !value)} />
+                  {registerForm.formState.errors.confirmPassword && <p className="mt-1 text-xs text-red-500">{registerForm.formState.errors.confirmPassword.message as string}</p>}
+                </div>
 
-                    <div>
-                      <label className="flex items-start gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
-                        <input
-                          type="checkbox"
-                          {...registerForm.register('agreeToTerms')}
-                          className="mt-0.5 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 dark:border-slate-600 dark:bg-slate-900"
-                        />
-                        <span>
-                          I agree to the{' '}
-                          <a href="#terms" className="font-semibold text-indigo-600 hover:text-indigo-700">
-                            Terms of Service
-                          </a>{' '}
-                          and{' '}
-                          <a href="#privacy" className="font-semibold text-indigo-600 hover:text-indigo-700">
-                            Privacy Policy
-                          </a>
-                          .
-                        </span>
-                      </label>
-                      {registerForm.formState.errors.agreeToTerms && <p className="mt-1 text-xs text-red-500">{registerForm.formState.errors.agreeToTerms.message as string}</p>}
-                    </div>
+                <div>
+                  <label className="flex items-start gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                    <input
+                      type="checkbox"
+                      {...registerForm.register('agreeToTerms')}
+                      className="mt-0.5 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 dark:border-slate-600 dark:bg-slate-900"
+                    />
+                    <span>
+                      I agree to the{' '}
+                      <a href="#terms" className="font-semibold text-indigo-600 hover:text-indigo-700">
+                        Terms of Service
+                      </a>{' '}
+                      and{' '}
+                      <a href="#privacy" className="font-semibold text-indigo-600 hover:text-indigo-700">
+                        Privacy Policy
+                      </a>
+                      .
+                    </span>
+                  </label>
+                  {registerForm.formState.errors.agreeToTerms && <p className="mt-1 text-xs text-red-500">{registerForm.formState.errors.agreeToTerms.message as string}</p>}
+                </div>
 
-                    <button type="submit" disabled={registerLoading} className="flex w-full items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-indigo-600 to-blue-600 px-4 py-2.5 text-sm font-bold text-white transition hover:opacity-95 disabled:opacity-60">
-                      {registerLoading && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
-                      Create Account
-                    </button>
-                  </form>
-                </>
-              )}
+                <button type="submit" disabled={registerLoading} className="flex w-full items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-indigo-600 to-blue-600 px-4 py-2.5 text-sm font-bold text-white transition hover:opacity-95 disabled:opacity-60">
+                  {registerLoading && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
+                  Create Account
+                </button>
+              </form>
             </section>
           )}
         </div>

@@ -18,9 +18,6 @@ export const api: AxiosInstance = axios.create({
   baseURL: API_URL,
   headers: {
     'Content-Type': 'application/json',
-    'Cache-Control': 'no-cache, no-store, must-revalidate',
-    Pragma: 'no-cache',
-    Expires: '0',
   },
   timeout: 30000,
 });
@@ -29,9 +26,6 @@ export const api: AxiosInstance = axios.create({
 api.interceptors.request.use((config) => {
   const token = getToken();
   if (token) config.headers.Authorization = `Bearer ${token}`;
-  config.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate';
-  config.headers.Pragma = 'no-cache';
-  config.headers.Expires = '0';
   return config;
 });
 
@@ -88,5 +82,8 @@ export { getToken, setToken, getRefresh, setRefresh, clearTokens };
 // Typed API helpers
 export function unwrap<T>(response: { data: { data: T } | T }): T {
   const d = response.data as any;
+  if (d && typeof d === 'object' && d.data !== undefined && d.meta !== undefined) {
+    return d;
+  }
   return d?.data !== undefined ? d.data : d;
 }

@@ -37,7 +37,33 @@ export class FavoritesService {
       }),
       this.prisma.favorite.count({ where: { userId } }),
     ]);
-    return { data: favorites, meta: { page, perPage, total } };
+    const matches = await this.prisma.matchScore.findMany({
+      where: {
+        userId,
+        targetType: 'professor',
+        targetId: { in: favorites.map((item) => item.professorId) },
+      },
+    });
+    const matchMap = new Map(matches.map((item) => [item.targetId, item]));
+
+    return {
+      data: favorites.map((favorite) => ({
+        ...favorite,
+        professor: {
+          ...favorite.professor,
+          matchScore: matchMap.get(favorite.professorId)
+            ? {
+                score: matchMap.get(favorite.professorId)?.score,
+                scoreBand: matchMap.get(favorite.professorId)?.scoreBand,
+                explanation: matchMap.get(favorite.professorId)?.explanation,
+                aiSummary: matchMap.get(favorite.professorId)?.aiSummary,
+                calculatedAt: matchMap.get(favorite.professorId)?.calculatedAt,
+              }
+            : null,
+        },
+      })),
+      meta: { page, perPage, total },
+    };
   }
 
   async updateStatus(userId: string, professorId: string, status: string, note?: string) {

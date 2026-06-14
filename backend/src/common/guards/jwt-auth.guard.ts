@@ -6,6 +6,8 @@ import { Reflector } from '@nestjs/core';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../shared/prisma/prisma.service';
+import { RequestContextService } from '../../shared/request-context/request-context.service';
+import { SecurityService } from '../../modules/security/security.service';
 import { JwtPayload } from '../types';
 
 @Injectable()
@@ -15,6 +17,8 @@ export class JwtAuthGuard implements CanActivate {
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
     private readonly reflector: Reflector,
+    private readonly requestContext: RequestContextService,
+    private readonly security: SecurityService,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -32,13 +36,36 @@ export class JwtAuthGuard implements CanActivate {
       const payload = this.jwtService.verify<JwtPayload>(token, {
         secret: this.config.get<string>('JWT_SECRET'),
       });
-      // Attach minimal user info without DB hit on every request
+      const user = await this.prisma.user.findFirst({
+        where: { id: payload.sub },
+        select: { id: true, email: true, role: true, status: true, tokenVersion: true },
+      });
+
+      if (!user || user.status === 'deleted') {
+        throw new UnauthorizedException('Account not found');
+      }
+
+      if (user.status === 'suspended') {
+        throw new ForbiddenException('Account suspended');
+      }
+
+      if ((payload as any).tokenVersion !== user.tokenVersion) {
+        throw new UnauthorizedException('Token version expired');
+      }
+
+      await this.security.validateSession(user.id, payload.sessionId);
+      await this.security.touchSession(user.id, payload.sessionId);
+
       request.user = {
-        id: payload.sub,
-        email: payload.email,
-        role: payload.role,
+        id: user.id,
+        email: user.email,
+        role: user.role,
         sessionId: payload.sessionId,
       };
+      this.requestContext.assign({
+        userId: user.id,
+        sessionId: payload.sessionId,
+      });
       return true;
     } catch {
       throw new UnauthorizedException('Invalid or expired token');

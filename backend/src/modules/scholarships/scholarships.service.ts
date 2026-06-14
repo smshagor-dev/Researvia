@@ -1,80 +1,173 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ApplicationStatus,
+  Prisma,
+  ScholarshipStatus,
+  ScholarshipVerificationStatus,
+} from '@prisma/client';
 import { PrismaService } from '../../shared/prisma/prisma.service';
 import { PaginationService } from '../../shared/pagination/pagination.service';
-import { RedisService } from '../../shared/redis/redis.service';
 
 @Injectable()
 export class ScholarshipsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly pagination: PaginationService,
-    private readonly redis: RedisService,
   ) {}
 
-  async findAll(filters: any) {
-    const page = this.pagination.clampPage(filters.page || 1);
-    const perPage = this.pagination.clampPerPage(filters.perPage || 20);
+  async findAll(filters: any, userId?: string) {
+    const page = this.pagination.clampPage(Number(filters.page || 1));
+    const perPage = this.pagination.clampPerPage(Number(filters.perPage || 20), 100);
     const skip = this.pagination.getSkip(page, perPage);
-
-    const where: any = {};
-    if (filters.isActive !== 'false') where.isActive = true;
-    if (filters.isExpired !== 'true') where.isExpired = false;
-    if (filters.q) where.title = { contains: filters.q };
-    if (filters.countryId) where.countryId = filters.countryId;
-    if (filters.universityId) where.universityId = filters.universityId;
-    if (filters.fundingType) where.fundingType = filters.fundingType;
-    if (filters.degreeLevel) where.degreeLevels = { path: '$', array_contains: filters.degreeLevel };
-    if (filters.deadlineFrom || filters.deadlineTo) {
-      where.deadline = {};
-      if (filters.deadlineFrom) where.deadline.gte = new Date(filters.deadlineFrom);
-      if (filters.deadlineTo) where.deadline.lte = new Date(filters.deadlineTo);
-    }
-
-    const orderMap: any = {
-      deadline: { deadline: 'asc' },
-      title: { title: 'asc' },
-      createdAt: { createdAt: 'desc' },
-    };
-    const orderBy = orderMap[filters.sortBy] || { createdAt: 'desc' };
+    const where = this.buildScholarshipWhere(filters, false);
+    const orderBy = this.buildOrderBy(filters.sortBy);
 
     const [scholarships, total] = await Promise.all([
       this.prisma.scholarship.findMany({
-        where, skip, take: perPage, orderBy,
+        where,
+        skip,
+        take: perPage,
+        orderBy,
         include: {
-          country: { select: { name: true, isoAlpha2: true, flagEmoji: true } },
+          country: { select: { id: true, name: true, isoAlpha2: true, flagEmoji: true } },
           university: { select: { id: true, name: true, logoUrl: true } },
         },
       }),
       this.prisma.scholarship.count({ where }),
     ]);
 
-    return this.pagination.paginate(scholarships, total, page, perPage);
+    const data = userId ? await this.attachScholarshipMatches(userId, scholarships) : scholarships;
+    return this.pagination.paginate(data, total, page, perPage);
   }
 
-  async findOne(id: string) {
-    const s = await this.prisma.scholarship.findUnique({
+  async findAdminAll(filters: any) {
+    const page = this.pagination.clampPage(Number(filters.page || 1));
+    const perPage = this.pagination.clampPerPage(Number(filters.perPage || 25), 100);
+    const skip = this.pagination.getSkip(page, perPage);
+    const where = this.buildScholarshipWhere(filters, true);
+    const orderBy = this.buildOrderBy(filters.sortBy || 'createdAt');
+
+    const [rows, total] = await Promise.all([
+      this.prisma.scholarship.findMany({
+        where,
+        skip,
+        take: perPage,
+        orderBy,
+        include: {
+          country: { select: { id: true, name: true, flagEmoji: true } },
+          university: { select: { id: true, name: true } },
+        },
+      }),
+      this.prisma.scholarship.count({ where }),
+    ]);
+
+    return this.pagination.paginate(rows, total, page, perPage);
+  }
+
+  async findOne(id: string, userId?: string) {
+    const scholarship = await this.prisma.scholarship.findUnique({
       where: { id },
       include: {
         country: true,
         university: { include: { country: true } },
+        sources: {
+          orderBy: { scrapedAt: 'desc' },
+        },
       },
     });
-    if (!s) throw new NotFoundException('Scholarship not found');
-    await this.prisma.scholarship.update({ where: { id }, data: { viewCount: { increment: 1 } } });
-    return s;
+    if (!scholarship) {
+      throw new NotFoundException('Scholarship not found');
+    }
+
+    await this.prisma.scholarship.update({
+      where: { id },
+      data: { viewCount: { increment: 1 } },
+    });
+
+    if (!userId) {
+      return scholarship;
+    }
+
+    const match = await this.prisma.matchScore.findUnique({
+      where: {
+        userId_targetType_targetId: {
+          userId,
+          targetType: 'scholarship',
+          targetId: id,
+        },
+      },
+    });
+
+    return {
+      ...scholarship,
+      matchScore: match
+        ? {
+            score: match.score,
+            scoreBand: match.scoreBand,
+            explanation: match.explanation,
+            aiSummary: match.aiSummary,
+            breakdown: match.breakdownJson,
+            strengths: match.strengthsJson,
+            weaknesses: match.weaknessesJson,
+            recommendations: match.recommendationsJson,
+            calculatedAt: match.calculatedAt,
+          }
+        : null,
+    };
+  }
+
+  async findAdminOne(id: string) {
+    const scholarship = await this.prisma.scholarship.findUnique({
+      where: { id },
+      include: {
+        country: true,
+        university: true,
+        sources: { orderBy: { scrapedAt: 'desc' } },
+        savedScholarships: {
+          select: {
+            id: true,
+            userId: true,
+            applicationStatus: true,
+            savedAt: true,
+          },
+          take: 20,
+          orderBy: { savedAt: 'desc' },
+        },
+      },
+    });
+
+    if (!scholarship) {
+      throw new NotFoundException('Scholarship not found');
+    }
+
+    return scholarship;
   }
 
   async create(data: any) {
     const slug = await this.generateSlug(data.title);
-    return this.prisma.scholarship.create({ data: { ...data, slug } });
+    return this.prisma.scholarship.create({
+      data: {
+        ...data,
+        slug,
+      },
+    });
   }
 
   async update(id: string, data: any) {
-    return this.prisma.scholarship.update({ where: { id }, data });
+    return this.prisma.scholarship.update({
+      where: { id },
+      data,
+    });
   }
 
   async delete(id: string) {
-    await this.prisma.scholarship.update({ where: { id }, data: { isActive: false } });
+    await this.prisma.scholarship.update({
+      where: { id },
+      data: {
+        isActive: false,
+        status: ScholarshipStatus.closed,
+      },
+    });
     return { success: true };
   }
 
@@ -84,7 +177,12 @@ export class ScholarshipsService {
       update: data,
       create: { userId, scholarshipId, ...data },
     });
-    await this.prisma.scholarship.update({ where: { id: scholarshipId }, data: { saveCount: { increment: 1 } } });
+
+    await this.prisma.scholarship.update({
+      where: { id: scholarshipId },
+      data: { saveCount: { increment: 1 } },
+    });
+
     return saved;
   }
 
@@ -94,11 +192,15 @@ export class ScholarshipsService {
   }
 
   async getSaved(userId: string, page = 1, perPage = 20) {
-    const skip = (page - 1) * perPage;
+    const currentPage = this.pagination.clampPage(Number(page || 1));
+    const pageSize = this.pagination.clampPerPage(Number(perPage || 20), 100);
+    const skip = this.pagination.getSkip(currentPage, pageSize);
+
     const [items, total] = await Promise.all([
       this.prisma.savedScholarship.findMany({
         where: { userId },
-        skip, take: perPage,
+        skip,
+        take: pageSize,
         include: {
           scholarship: {
             include: {
@@ -107,32 +209,158 @@ export class ScholarshipsService {
             },
           },
         },
-        orderBy: { createdAt: 'desc' },
+        orderBy: { savedAt: 'desc' },
       }),
       this.prisma.savedScholarship.count({ where: { userId } }),
     ]);
-    return { data: items, meta: { page, perPage, total } };
+
+    const scholarshipIds = items.map((item) => item.scholarshipId);
+    const matches = await this.prisma.matchScore.findMany({
+      where: {
+        userId,
+        targetType: 'scholarship',
+        targetId: { in: scholarshipIds },
+      },
+    });
+    const matchMap = new Map(matches.map((item) => [item.targetId, item]));
+
+    const enriched = items.map((item) => ({
+      ...item,
+      scholarship: {
+        ...item.scholarship,
+        matchScore: matchMap.get(item.scholarshipId)
+          ? {
+              score: matchMap.get(item.scholarshipId)?.score,
+              scoreBand: matchMap.get(item.scholarshipId)?.scoreBand,
+              explanation: matchMap.get(item.scholarshipId)?.explanation,
+              aiSummary: matchMap.get(item.scholarshipId)?.aiSummary,
+              calculatedAt: matchMap.get(item.scholarshipId)?.calculatedAt,
+            }
+          : null,
+      },
+    }));
+
+    return this.pagination.paginate(enriched, total, currentPage, pageSize);
   }
 
-  async updateSavedStatus(userId: string, scholarshipId: string, data: any) {
-    return this.prisma.savedScholarship.updateMany({
+  async updateSavedStatus(userId: string, scholarshipId: string, data: { applicationStatus?: ApplicationStatus; notes?: string }) {
+    const result = await this.prisma.savedScholarship.updateMany({
       where: { userId, scholarshipId },
       data,
     });
+
+    if (data.applicationStatus === ApplicationStatus.applied) {
+      await this.prisma.scholarship.update({
+        where: { id: scholarshipId },
+        data: { applicationCount: { increment: 1 } },
+      }).catch(() => undefined);
+    }
+
+    return result;
   }
 
   async markExpired() {
     const result = await this.prisma.scholarship.updateMany({
       where: { deadline: { lt: new Date() }, isExpired: false },
-      data: { isExpired: true, isActive: false },
+      data: {
+        isExpired: true,
+        isActive: false,
+        status: ScholarshipStatus.expired,
+      },
     });
     return result.count;
+  }
+
+  private buildScholarshipWhere(filters: any, includeInactive: boolean): Prisma.ScholarshipWhereInput {
+    const where: Prisma.ScholarshipWhereInput = {};
+
+    if (!includeInactive) {
+      where.status = ScholarshipStatus.active;
+      where.verificationStatus = ScholarshipVerificationStatus.verified;
+      where.isExpired = false;
+      where.isActive = true;
+    } else {
+      if (filters.status) where.status = filters.status;
+      if (filters.verificationStatus) where.verificationStatus = filters.verificationStatus;
+    }
+
+    if (filters.q) {
+      where.OR = [
+        { title: { contains: filters.q } },
+        { providerName: { contains: filters.q } },
+      ];
+    }
+
+    if (filters.countryId) where.countryId = filters.countryId;
+    if (filters.universityId) where.universityId = filters.universityId;
+    if (filters.fundingType) where.fundingType = filters.fundingType;
+    if (filters.degreeLevel) where.degreeLevel = filters.degreeLevel;
+    if (filters.fullyFunded === 'true') where.isFullyFunded = true;
+    if (filters.fullyFunded === 'false') where.isFullyFunded = false;
+    if (filters.researchArea) where.researchAreas = { path: '$', array_contains: filters.researchArea };
+
+    if (filters.deadlineFrom || filters.deadlineTo) {
+      where.deadline = {};
+      if (filters.deadlineFrom) where.deadline.gte = new Date(filters.deadlineFrom);
+      if (filters.deadlineTo) where.deadline.lte = new Date(filters.deadlineTo);
+    }
+
+    return where;
+  }
+
+  private buildOrderBy(sortBy?: string): Prisma.ScholarshipOrderByWithRelationInput {
+    switch (sortBy) {
+      case 'deadline':
+        return { deadline: 'asc' };
+      case 'fundingAmount':
+        return { fundingAmount: 'desc' };
+      case 'qualityScore':
+        return { qualityScore: 'desc' };
+      case 'newest':
+      case 'createdAt':
+      default:
+        return { createdAt: 'desc' };
+    }
   }
 
   private async generateSlug(title: string): Promise<string> {
     let slug = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
     const existing = await this.prisma.scholarship.findUnique({ where: { slug } });
-    if (existing) slug = `${slug}-${Date.now()}`;
+    if (existing) {
+      slug = `${slug}-${Date.now()}`;
+    }
     return slug;
+  }
+
+  private async attachScholarshipMatches(userId: string, scholarships: any[]) {
+    if (!scholarships.length) {
+      return scholarships;
+    }
+
+    const matches = await this.prisma.matchScore.findMany({
+      where: {
+        userId,
+        targetType: 'scholarship',
+        targetId: { in: scholarships.map((item) => item.id) },
+      },
+    });
+
+    const matchMap = new Map(matches.map((item) => [item.targetId, item]));
+    return scholarships.map((scholarship) => {
+      const match = matchMap.get(scholarship.id);
+      return {
+        ...scholarship,
+        matchScore: match
+          ? {
+              score: match.score,
+              scoreBand: match.scoreBand,
+              explanation: match.explanation,
+              aiSummary: match.aiSummary,
+              breakdown: match.breakdownJson,
+              calculatedAt: match.calculatedAt,
+            }
+          : null,
+      };
+    });
   }
 }

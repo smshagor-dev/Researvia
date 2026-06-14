@@ -67,14 +67,23 @@ export const FUNDING_TYPE_LABELS: Record<string, string> = {
   partially_funded: 'Partially Funded',
   stipend_only: 'Stipend Only',
   tuition_only: 'Tuition Only',
+  scholarship: 'Scholarship',
+  grant: 'Grant',
+  assistantship: 'Assistantship',
+  fellowship: 'Fellowship',
+  internship: 'Internship',
+  exchange: 'Exchange Program',
   other: 'Other',
 };
 
 export const DEGREE_LEVEL_LABELS: Record<string, string> = {
+  bachelor: "Bachelor's",
+  master: "Master's",
   bachelors: "Bachelor's",
   masters: "Master's",
   phd: 'PhD',
   postdoc: 'Postdoc',
+  mixed: 'Mixed',
   other: 'Other',
 };
 
@@ -93,4 +102,47 @@ export const ACCEPTING_LABELS: Record<string, { label: string; color: string }> 
   yes: { label: 'Accepting Students', color: 'text-green-600 bg-green-50 border-green-200' },
   no: { label: 'Not Accepting', color: 'text-red-600 bg-red-50 border-red-200' },
   unknown: { label: 'Unknown', color: 'text-yellow-600 bg-yellow-50 border-yellow-200' },
+};
+
+export const OPPORTUNITY_TYPE_LABELS: Record<string, string> = {
+  phd_position: 'PhD Position',
+  research_assistant: 'Research Assistant',
+  teaching_assistant: 'Teaching Assistant',
+  research_internship: 'Research Internship',
+  lab_position: 'Lab Position',
+  research_grant: 'Research Grant',
+  fellowship: 'Fellowship',
+  postdoc: 'Postdoc',
+  exchange_program: 'Exchange Program',
+};
+
+export const APPLICATION_STATUS_LABELS: Record<string, string> = {
+  saved: 'Saved',
+  planning: 'Planning',
+  applied: 'Applied',
+  under_review: 'Under Review',
+  interview: 'Interview',
+  offer_received: 'Offer',
+  accepted: 'Accepted',
+  rejected: 'Rejected',
+  withdrawn: 'Withdrawn',
+};
+
+export const APPLICATION_STATUS_COLORS: Record<string, string> = {
+  saved: 'bg-slate-100 text-slate-700',
+  planning: 'bg-blue-100 text-blue-700',
+  applied: 'bg-indigo-100 text-indigo-700',
+  under_review: 'bg-amber-100 text-amber-700',
+  interview: 'bg-fuchsia-100 text-fuchsia-700',
+  offer_received: 'bg-emerald-100 text-emerald-700',
+  accepted: 'bg-green-100 text-green-700',
+  rejected: 'bg-rose-100 text-rose-700',
+  withdrawn: 'bg-slate-200 text-slate-700',
+};
+
+export const INTERVIEW_STATUS_LABELS: Record<string, string> = {
+  scheduled: 'Scheduled',
+  completed: 'Completed',
+  cancelled: 'Cancelled',
+  rescheduled: 'Rescheduled',
 };

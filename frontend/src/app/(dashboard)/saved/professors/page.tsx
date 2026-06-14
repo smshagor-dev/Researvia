@@ -21,6 +21,13 @@ export default function SavedProfessorsPage() {
   const { data, isLoading } = useFavorites();
   const favorites = (data as any)?.data || [];
   const [updatingId, setUpdatingId] = useState<string|null>(null);
+  const [sortBy, setSortBy] = useState<'savedAt' | 'matchScore'>('savedAt');
+  const sortedFavorites = [...favorites].sort((a: any, b: any) => {
+    if (sortBy === 'matchScore') {
+      return (b.professor?.matchScore?.score || 0) - (a.professor?.matchScore?.score || 0);
+    }
+    return new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime();
+  });
 
   const handleStatusChange = async (professorId: string, status: string) => {
     setUpdatingId(professorId);
@@ -37,7 +44,7 @@ export default function SavedProfessorsPage() {
   };
 
   return (
-    <div className="p-6 max-w-5xl mx-auto">
+    <div className="mx-auto w-full max-w-[1680px] px-6 py-6 xl:px-8">
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
           <Star className="w-6 h-6 text-yellow-500" /> Saved Professors
@@ -56,6 +63,13 @@ export default function SavedProfessorsPage() {
             </div>
           );
         })}
+      </div>
+
+      <div className="mb-4 flex justify-end">
+        <select value={sortBy} onChange={(e) => setSortBy(e.target.value as any)} className="rounded-xl border border-gray-200 px-3 py-2 text-sm">
+          <option value="savedAt">Sort by Saved</option>
+          <option value="matchScore">Sort by Match Score</option>
+        </select>
       </div>
 
       {isLoading ? (
@@ -82,7 +96,7 @@ export default function SavedProfessorsPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
-              {favorites.map((fav: any) => {
+              {sortedFavorites.map((fav: any) => {
                 const p = fav.professor;
                 return (
                   <tr key={fav.id} className="hover:bg-gray-50 transition">
@@ -95,6 +109,7 @@ export default function SavedProfessorsPage() {
                           <Link href={`/professors/${p.id}`} className="text-sm font-semibold text-gray-900 hover:text-blue-600 transition">
                             {p.fullName}
                           </Link>
+                          {p.matchScore?.score != null && <p className="text-xs font-semibold text-emerald-600 mt-0.5">Match {p.matchScore.score}/100</p>}
                           {fav.note && <p className="text-xs text-gray-400 mt-0.5 truncate max-w-[200px]">{fav.note}</p>}
                         </div>
                       </div>

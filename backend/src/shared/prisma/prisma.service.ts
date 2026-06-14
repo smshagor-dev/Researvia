@@ -1,5 +1,6 @@
 import { Injectable, OnModuleInit, OnModuleDestroy, Logger } from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
+import { dbLatency } from '../../modules/observability/metrics.registry';
 
 @Injectable()
 export class PrismaService extends PrismaClient implements OnModuleInit, OnModuleDestroy {
@@ -16,6 +17,7 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
 
     // Soft delete middleware
     this.$use(async (params, next) => {
+      const startedAt = Date.now();
       if (params.model === 'User') {
         if (params.action === 'delete') {
           params.action = 'update';
@@ -37,7 +39,15 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
           }
         }
       }
-      return next(params);
+      const result = await next(params);
+      dbLatency.observe(
+        {
+          model: params.model || 'raw',
+          action: params.action,
+        },
+        Date.now() - startedAt,
+      );
+      return result;
     });
   }
 

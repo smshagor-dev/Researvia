@@ -1,6 +1,8 @@
 import { Injectable, OnModuleDestroy, OnModuleInit, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import Redis from 'ioredis';
+import { getRedisConnectionOptions, hasRedisConfiguration } from './redis.config';
+import { redisLatency } from '../../modules/observability/metrics.registry';
 
 @Injectable()
 export class RedisService implements OnModuleInit, OnModuleDestroy {
@@ -13,8 +15,19 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
   constructor(private readonly config: ConfigService) {}
 
   async onModuleInit() {
-    const redisUrl = this.config.get<string>('REDIS_URL', 'redis://localhost:6379');
-    this.client = new Redis(redisUrl, {
+    const isProduction = this.config.get<string>('NODE_ENV') === 'production';
+    if (!hasRedisConfiguration(this.config)) {
+      if (isProduction) {
+        throw new Error('Redis is required in production. Configure REDIS_HOST/REDIS_PORT or REDIS_URL.');
+      }
+      this.useMemoryFallback = true;
+      this.logger.warn('Redis is not configured, using in-memory fallback outside production');
+      return;
+    }
+
+    const connection = getRedisConnectionOptions(this.config);
+    this.client = new Redis({
+      ...connection,
       maxRetriesPerRequest: 3,
       enableReadyCheck: true,
       lazyConnect: true,
@@ -27,6 +40,9 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
     try {
       await this.client.connect();
     } catch (e) {
+      if (isProduction) {
+        throw new Error(`Redis connection failed in production: ${(e as Error).message}`);
+      }
       this.useMemoryFallback = true;
       this.logger.warn(`Redis unavailable, using in-memory fallback: ${(e as Error).message}`);
     }
@@ -46,19 +62,26 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
   }
 
   async get(key: string): Promise<string | null> {
+    const startedAt = Date.now();
     if (this.useMemoryFallback) {
       this.deleteIfExpired(key);
-      return this.memoryStore.get(key)?.value ?? null;
+      const value = this.memoryStore.get(key)?.value ?? null;
+      redisLatency.observe({ command: 'get' }, Date.now() - startedAt);
+      return value;
     }
-    return this.client!.get(key);
+    const value = await this.client!.get(key);
+    redisLatency.observe({ command: 'get' }, Date.now() - startedAt);
+    return value;
   }
 
   async set(key: string, value: string, ttlSeconds?: number): Promise<void> {
+    const startedAt = Date.now();
     if (this.useMemoryFallback) {
       this.memoryStore.set(key, {
         value,
         expiresAt: ttlSeconds ? Date.now() + ttlSeconds * 1000 : undefined,
       });
+      redisLatency.observe({ command: 'set' }, Date.now() - startedAt);
       return;
     }
 
@@ -67,15 +90,19 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
     } else {
       await this.client!.set(key, value);
     }
+    redisLatency.observe({ command: 'set' }, Date.now() - startedAt);
   }
 
   async del(key: string): Promise<void> {
+    const startedAt = Date.now();
     if (this.useMemoryFallback) {
       this.memoryStore.delete(key);
       this.memoryHashes.delete(key);
+      redisLatency.observe({ command: 'del' }, Date.now() - startedAt);
       return;
     }
     await this.client!.del(key);
+    redisLatency.observe({ command: 'del' }, Date.now() - startedAt);
   }
 
   async keys(pattern: string): Promise<string[]> {
@@ -105,13 +132,17 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
   }
 
   async incr(key: string): Promise<number> {
+    const startedAt = Date.now();
     if (this.useMemoryFallback) {
       const previous = this.memoryStore.get(key);
       const current = Number(previous?.value ?? 0) + 1;
       this.memoryStore.set(key, { value: String(current), expiresAt: previous?.expiresAt });
+      redisLatency.observe({ command: 'incr' }, Date.now() - startedAt);
       return current;
     }
-    return this.client!.incr(key);
+    const value = await this.client!.incr(key);
+    redisLatency.observe({ command: 'incr' }, Date.now() - startedAt);
+    return value;
   }
 
   async expire(key: string, ttlSeconds: number): Promise<void> {

@@ -18,7 +18,23 @@ export class AdminController {
 
   @Get('users')
   async getUsers(@Query() filters: any) {
-    return this.usersService.findAll(filters, filters.page || 1, filters.perPage || 20);
+    return this.usersService.findAll(filters, Number(filters.page || 1), Number(filters.perPage || 20));
+  }
+
+  @Get('users/:id')
+  async getUserDetail(@Param('id') id: string) {
+    return this.usersService.getAdminUserDetail(id);
+  }
+
+  @Patch('users/:id')
+  async updateUserDetail(@Param('id') id: string, @Body() body: any) {
+    return this.usersService.adminUpdateUserDetail(id, body);
+  }
+
+  @Post('users/:id/avatar')
+  @UseInterceptors(FileInterceptor('file'))
+  async uploadUserAvatar(@Param('id') id: string, @UploadedFile() file: Express.Multer.File) {
+    return this.usersService.adminUploadAvatar(id, file);
   }
 
   @Post('users/:id/role')

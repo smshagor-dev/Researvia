@@ -6,8 +6,10 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { authApi } from '@/lib/api';
+import { authApi, usersApi } from '@/lib/api';
+import { useAuthStore } from '@/lib/stores/authStore';
 import { Eye, EyeOff, Loader2, GraduationCap, CheckCircle2 } from 'lucide-react';
+import { getPostAuthRedirect } from '@/lib/auth/redirect';
 
 const schema = z.object({
   fullName: z.string().min(2, 'Name must be at least 2 characters'),
@@ -21,8 +23,8 @@ const schema = z.object({
 
 export default function RegisterPage() {
   const router = useRouter();
+  const { setUser } = useAuthStore();
   const [showPassword, setShowPassword] = useState(false);
-  const [success, setSuccess] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -43,8 +45,12 @@ export default function RegisterPage() {
     setError('');
     setLoading(true);
     try {
-      await authApi.register(data);
-      setSuccess(true);
+      const result = await authApi.register(data);
+      if (result.accessToken) {
+        const me = await usersApi.getMe();
+        setUser(me);
+      }
+      router.push(result.nextPath || getPostAuthRedirect(result.user));
     } catch (e: any) {
       const msg = e.response?.data?.error?.message || 'Registration failed';
       setError(msg);
@@ -52,21 +58,6 @@ export default function RegisterPage() {
       setLoading(false);
     }
   };
-
-  if (success) {
-    return (
-      <div className="auth-watercolor-bg auth-shell">
-        <div className="auth-card relative z-10 w-full max-w-md p-10 text-center">
-          <CheckCircle2 className="w-16 h-16 text-green-500 mx-auto mb-4" />
-          <h2 className="text-2xl font-bold text-gray-900 mb-2">Account Created!</h2>
-          <p className="text-gray-500 mb-6">Check your email to verify your account, then sign in.</p>
-          <Link href="/login" className="gradient-primary inline-block rounded-lg px-6 py-2.5 font-semibold text-white shadow-lg shadow-indigo-600/20 transition hover:-translate-y-0.5 hover:opacity-95">
-            Go to Login
-          </Link>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="auth-watercolor-bg auth-shell">

@@ -135,7 +135,7 @@ function ProfessorsPageContent() {
   );
 
   return (
-    <div className="p-6 max-w-7xl mx-auto">
+    <div className="mx-auto w-full max-w-[1680px] px-6 py-6 xl:px-8">
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-gray-900 mb-1">Discover Professors</h1>
         <p className="text-gray-500 text-sm">Find the right professor for your research interests</p>
@@ -235,6 +235,11 @@ function ProfessorsPageContent() {
                           <p className="text-xs text-gray-500 mt-0.5">
                             {POSITION_LABELS[prof.position] || prof.position || 'Professor'}
                           </p>
+                          {prof.matchScore?.score != null && (
+                            <span className="mt-2 inline-flex rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-700">
+                              Match {prof.matchScore.score}/100
+                            </span>
+                          )}
                         </div>
                       </div>
 
@@ -328,7 +333,7 @@ function ProfessorsPageContent() {
 
 export default function ProfessorsPage() {
   return (
-    <Suspense fallback={<div className="p-6 max-w-7xl mx-auto text-sm text-gray-500">Loading...</div>}>
+    <Suspense fallback={<div className="mx-auto w-full max-w-[1680px] px-6 py-6 text-sm text-gray-500 xl:px-8">Loading...</div>}>
       <ProfessorsPageContent />
     </Suspense>
   );

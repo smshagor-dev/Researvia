@@ -1,12 +1,102 @@
-import { PrismaClient } from '@prisma/client';
+import { Country, PrismaClient } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 
 const prisma = new PrismaClient();
 
-async function main() {
-  console.log('🌱 Seeding database...');
+const POPULAR_DESTINATION_CODES = new Set([
+  'US', 'GB', 'DE', 'CA', 'AU', 'SE', 'NL', 'CH', 'FR', 'IT', 'ES', 'JP',
+  'KR', 'SG', 'CN', 'NZ', 'IE', 'BE', 'DK', 'FI', 'NO', 'AT',
+]);
 
-  // Subscription Plans
+type CountriesNowCountry = {
+  name?: string;
+  iso2?: string;
+  iso3?: string;
+  unicodeFlag?: string;
+  region?: string;
+  subregion?: string;
+};
+
+async function seedCountriesFromApi() {
+  const fallbackCountries = [
+    { name: 'Australia', isoAlpha2: 'AU', isoAlpha3: 'AUS', region: 'Oceania', subregion: 'Australia and New Zealand', flagEmoji: '🇦🇺' },
+    { name: 'Canada', isoAlpha2: 'CA', isoAlpha3: 'CAN', region: 'Americas', subregion: 'North America', flagEmoji: '🇨🇦' },
+    { name: 'Switzerland', isoAlpha2: 'CH', isoAlpha3: 'CHE', region: 'Europe', subregion: 'Western Europe', flagEmoji: '🇨🇭' },
+    { name: 'Germany', isoAlpha2: 'DE', isoAlpha3: 'DEU', region: 'Europe', subregion: 'Western Europe', flagEmoji: '🇩🇪' },
+    { name: 'United Kingdom', isoAlpha2: 'GB', isoAlpha3: 'GBR', region: 'Europe', subregion: 'Northern Europe', flagEmoji: '🇬🇧' },
+    { name: 'Netherlands', isoAlpha2: 'NL', isoAlpha3: 'NLD', region: 'Europe', subregion: 'Western Europe', flagEmoji: '🇳🇱' },
+    { name: 'Sweden', isoAlpha2: 'SE', isoAlpha3: 'SWE', region: 'Europe', subregion: 'Northern Europe', flagEmoji: '🇸🇪' },
+    { name: 'United States', isoAlpha2: 'US', isoAlpha3: 'USA', region: 'Americas', subregion: 'North America', flagEmoji: '🇺🇸' },
+  ];
+
+  let countries: Array<{
+    name: string;
+    isoAlpha2: string;
+    isoAlpha3: string;
+    region: string | null;
+    subregion: string | null;
+    flagEmoji: string | null;
+    isPopularDestination: boolean;
+  }> = [];
+
+  try {
+    const response = await fetch('https://countriesnow.space/api/v0.1/countries/info?returns=iso2,iso3,unicodeFlag,region,subregion');
+    if (!response.ok) {
+      throw new Error(`CountriesNow returned ${response.status}`);
+    }
+
+    const payload = (await response.json()) as { error?: boolean; data?: CountriesNowCountry[] };
+    if (!Array.isArray(payload.data)) {
+      throw new Error('Country payload did not contain a data array');
+    }
+
+    countries = payload.data
+      .map((country) => ({
+        name: country.name?.trim() || '',
+        isoAlpha2: country.iso2?.trim().toUpperCase() || '',
+        isoAlpha3: country.iso3?.trim().toUpperCase() || '',
+        region: country.region?.trim() || null,
+        subregion: country.subregion?.trim() || null,
+        flagEmoji: country.unicodeFlag?.trim() || null,
+        isPopularDestination: POPULAR_DESTINATION_CODES.has(country.iso2?.trim().toUpperCase() || ''),
+      }))
+      .filter((country) => country.name && country.isoAlpha2.length === 2 && country.isoAlpha3.length === 3)
+      .sort((a, b) => a.name.localeCompare(b.name));
+
+    console.log(`Loaded ${countries.length} countries from CountriesNow API`);
+  } catch (error: any) {
+    console.warn(`Country API fetch failed, using fallback list: ${error.message}`);
+    countries = fallbackCountries.map((country) => ({
+      ...country,
+      region: country.region || null,
+      subregion: country.subregion || null,
+      flagEmoji: country.flagEmoji || null,
+      isPopularDestination: POPULAR_DESTINATION_CODES.has(country.isoAlpha2),
+    }));
+  }
+
+  const result: Country[] = [];
+  for (const country of countries) {
+    result.push(await prisma.country.upsert({
+      where: { isoAlpha2: country.isoAlpha2 },
+      update: {
+        name: country.name,
+        isoAlpha3: country.isoAlpha3,
+        region: country.region,
+        subregion: country.subregion,
+        flagEmoji: country.flagEmoji,
+        isPopularDestination: country.isPopularDestination,
+      },
+      create: country,
+    }));
+  }
+
+  return result;
+}
+
+async function main() {
+  console.log('Seeding database...');
+
   const plans = await Promise.all([
     prisma.subscriptionPlan.upsert({
       where: { slug: 'free' },
@@ -17,9 +107,11 @@ async function main() {
         priceMonthly: 0,
         priceYearly: 0,
         creditsPerMonth: 20,
-        emailSendsPerDay: 10,
+        emailSendsPerDay: 5,
         professorRevealsPerMonth: 5,
         aiGenerationsPerMonth: 5,
+        opportunityUnlocksPerMonth: 5,
+        scholarshipUnlocksPerMonth: 5,
         maxSavedProfessors: 20,
         maxSavedScholarships: 20,
         maxSmtpAccounts: 1,
@@ -40,9 +132,11 @@ async function main() {
         priceMonthly: 9.99,
         priceYearly: 99.99,
         creditsPerMonth: 100,
-        emailSendsPerDay: 50,
+        emailSendsPerDay: 20,
         professorRevealsPerMonth: 20,
-        aiGenerationsPerMonth: 20,
+        aiGenerationsPerMonth: 25,
+        opportunityUnlocksPerMonth: 20,
+        scholarshipUnlocksPerMonth: 20,
         maxSavedProfessors: 100,
         maxSavedScholarships: 100,
         maxSmtpAccounts: 2,
@@ -63,9 +157,11 @@ async function main() {
         priceMonthly: 29.99,
         priceYearly: 299.99,
         creditsPerMonth: 500,
-        emailSendsPerDay: 200,
+        emailSendsPerDay: 100,
         professorRevealsPerMonth: 100,
         aiGenerationsPerMonth: 100,
+        opportunityUnlocksPerMonth: 100,
+        scholarshipUnlocksPerMonth: 100,
         maxSavedProfessors: 500,
         maxSavedScholarships: 500,
         maxSmtpAccounts: 5,
@@ -89,6 +185,8 @@ async function main() {
         emailSendsPerDay: 9999,
         professorRevealsPerMonth: 9999,
         aiGenerationsPerMonth: 9999,
+        opportunityUnlocksPerMonth: 9999,
+        scholarshipUnlocksPerMonth: 9999,
         maxSavedProfessors: 9999,
         maxSavedScholarships: 9999,
         maxSmtpAccounts: 99,
@@ -97,18 +195,41 @@ async function main() {
         hasAiMatchScore: true,
         hasBulkEmail: true,
         hasAnalytics: true,
+        hasTeamAccess: true,
         sortOrder: 3,
       },
     }),
   ]);
 
-  // Super Admin User
-  const passwordHash = await bcrypt.hash('Admin@123456', 12);
-  const admin = await prisma.user.upsert({
-    where: { email: 'admin@profcrm.com' },
-    update: {},
+  const passwordHash = await bcrypt.hash('1234567890', 12);
+  const existingRequestedAdmin = await prisma.user.findUnique({ where: { email: 'support@smshagor.com' } });
+  const legacyAdmin = await prisma.user.findUnique({ where: { email: 'admin@profcrm.com' } });
+
+  if (!existingRequestedAdmin && legacyAdmin) {
+    await prisma.user.update({
+      where: { id: legacyAdmin.id },
+      data: {
+        email: 'support@smshagor.com',
+        passwordHash,
+        fullName: 'Platform Admin',
+        role: 'super_admin',
+        status: 'active',
+        emailVerifiedAt: new Date(),
+      },
+    });
+  }
+
+  await prisma.user.upsert({
+    where: { email: 'support@smshagor.com' },
+    update: {
+      passwordHash,
+      fullName: 'Platform Admin',
+      role: 'super_admin',
+      status: 'active',
+      emailVerifiedAt: new Date(),
+    },
     create: {
-      email: 'admin@profcrm.com',
+      email: 'support@smshagor.com',
       passwordHash,
       fullName: 'Platform Admin',
       role: 'super_admin',
@@ -119,6 +240,7 @@ async function main() {
       subscriptions: {
         create: {
           planId: plans[3].id,
+          billingCycle: 'yearly',
           status: 'active',
           currentPeriodStart: new Date(),
           currentPeriodEnd: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
@@ -127,19 +249,9 @@ async function main() {
     },
   });
 
-  // Sample Countries
-  const countries = await Promise.all([
-    prisma.country.upsert({ where: { isoAlpha2: 'US' }, update: {}, create: { name: 'United States', isoAlpha2: 'US', isoAlpha3: 'USA', region: 'Americas', flagEmoji: '🇺🇸', isPopularDestination: true } }),
-    prisma.country.upsert({ where: { isoAlpha2: 'GB' }, update: {}, create: { name: 'United Kingdom', isoAlpha2: 'GB', isoAlpha3: 'GBR', region: 'Europe', flagEmoji: '🇬🇧', isPopularDestination: true } }),
-    prisma.country.upsert({ where: { isoAlpha2: 'DE' }, update: {}, create: { name: 'Germany', isoAlpha2: 'DE', isoAlpha3: 'DEU', region: 'Europe', flagEmoji: '🇩🇪', isPopularDestination: true } }),
-    prisma.country.upsert({ where: { isoAlpha2: 'CA' }, update: {}, create: { name: 'Canada', isoAlpha2: 'CA', isoAlpha3: 'CAN', region: 'Americas', flagEmoji: '🇨🇦', isPopularDestination: true } }),
-    prisma.country.upsert({ where: { isoAlpha2: 'AU' }, update: {}, create: { name: 'Australia', isoAlpha2: 'AU', isoAlpha3: 'AUS', region: 'Oceania', flagEmoji: '🇦🇺', isPopularDestination: true } }),
-    prisma.country.upsert({ where: { isoAlpha2: 'SE' }, update: {}, create: { name: 'Sweden', isoAlpha2: 'SE', isoAlpha3: 'SWE', region: 'Europe', flagEmoji: '🇸🇪', isPopularDestination: true } }),
-    prisma.country.upsert({ where: { isoAlpha2: 'NL' }, update: {}, create: { name: 'Netherlands', isoAlpha2: 'NL', isoAlpha3: 'NLD', region: 'Europe', flagEmoji: '🇳🇱', isPopularDestination: true } }),
-    prisma.country.upsert({ where: { isoAlpha2: 'CH' }, update: {}, create: { name: 'Switzerland', isoAlpha2: 'CH', isoAlpha3: 'CHE', region: 'Europe', flagEmoji: '🇨🇭', isPopularDestination: true } }),
-  ]);
+  const countries = await seedCountriesFromApi();
+  const countryByCode = new Map<string, Country>(countries.map((country) => [country.isoAlpha2, country]));
 
-  // Sample Universities
   const universities = await Promise.all([
     prisma.university.upsert({
       where: { rorId: 'https://ror.org/042nb2s44' },
@@ -147,7 +259,7 @@ async function main() {
       create: {
         rorId: 'https://ror.org/042nb2s44',
         name: 'Massachusetts Institute of Technology',
-        countryId: countries[0].id,
+        countryId: countryByCode.get('US')!.id,
         city: 'Cambridge',
         websiteUrl: 'https://www.mit.edu',
         qsRanking: 1,
@@ -162,7 +274,7 @@ async function main() {
       create: {
         rorId: 'https://ror.org/03vek6s52',
         name: 'Stanford University',
-        countryId: countries[0].id,
+        countryId: countryByCode.get('US')!.id,
         city: 'Stanford',
         websiteUrl: 'https://www.stanford.edu',
         qsRanking: 3,
@@ -177,7 +289,7 @@ async function main() {
       create: {
         rorId: 'https://ror.org/052gg0110',
         name: 'University of Cambridge',
-        countryId: countries[1].id,
+        countryId: countryByCode.get('GB')!.id,
         city: 'Cambridge',
         websiteUrl: 'https://www.cam.ac.uk',
         qsRanking: 2,
@@ -188,7 +300,6 @@ async function main() {
     }),
   ]);
 
-  // Research Areas
   const researchAreas = await Promise.all([
     prisma.researchArea.upsert({ where: { slug: 'computer-science' }, update: {}, create: { name: 'Computer Science', slug: 'computer-science', level: 0 } }),
     prisma.researchArea.upsert({ where: { slug: 'machine-learning' }, update: {}, create: { name: 'Machine Learning', slug: 'machine-learning', level: 1 } }),
@@ -200,7 +311,6 @@ async function main() {
     prisma.researchArea.upsert({ where: { slug: 'quantum-computing' }, update: {}, create: { name: 'Quantum Computing', slug: 'quantum-computing', level: 1 } }),
   ]);
 
-  // Sample Departments
   const depts = await Promise.all([
     prisma.department.upsert({
       where: { universityId_slug: { universityId: universities[0].id, slug: 'eecs' } },
@@ -214,7 +324,6 @@ async function main() {
     }),
   ]);
 
-  // Sample Professors
   const prof1 = await prisma.professor.upsert({
     where: { openalexId: 'A5023888391' },
     update: {},
@@ -262,7 +371,6 @@ async function main() {
     },
   });
 
-  // Sample Scholarship
   await prisma.scholarship.upsert({
     where: { slug: 'fulbright-student-program-2025' },
     update: {},
@@ -270,7 +378,7 @@ async function main() {
       title: 'Fulbright Student Program 2025',
       slug: 'fulbright-student-program-2025',
       description: 'The Fulbright Program offers grants for individually designed study/research projects or for English Teaching Assistant Programs.',
-      countryId: countries[0].id,
+      countryId: countryByCode.get('US')!.id,
       fundingType: 'fully_funded',
       degreeLevels: ['masters', 'phd'],
       eligibility: 'US citizens only. Strong academic record required.',
@@ -282,10 +390,14 @@ async function main() {
     },
   });
 
-  console.log('✅ Seed complete!');
-  console.log(`   Admin: admin@profcrm.com / Admin@123456`);
+  console.log('Seed complete');
+  console.log(`Countries available: ${countries.length}`);
+  console.log('Admin: support@smshagor.com / 1234567890');
 }
 
 main()
-  .catch(console.error)
+  .catch((error) => {
+    console.error(error);
+    process.exitCode = 1;
+  })
   .finally(() => prisma.$disconnect());

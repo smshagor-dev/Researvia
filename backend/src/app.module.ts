@@ -1,9 +1,11 @@
 import { Module } from '@nestjs/common';
+import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
-import { ThrottlerModule } from '@nestjs/throttler';
+import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { ScheduleModule } from '@nestjs/schedule';
 import { AppConfigModule } from './config/config.module';
 import { PrismaModule } from './shared/prisma/prisma.module';
+import { RequestContextModule } from './shared/request-context/request-context.module';
 import { RedisModule } from './shared/redis/redis.module';
 import { StorageModule } from './modules/storage/storage.module';
 import { AuthModule } from './modules/auth/auth.module';
@@ -29,11 +31,23 @@ import { BillingModule } from './modules/billing/billing.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { AnalyticsModule } from './modules/analytics/analytics.module';
 import { AdminModule } from './modules/admin/admin.module';
+import { AdminProfessorsModule } from './modules/admin-professors/admin-professors.module';
 import { StudentProfileModule } from './modules/student-profile/student-profile.module';
 import { HealthModule } from './modules/health/health.module';
 import { WebhooksModule } from './modules/webhooks/webhooks.module';
 import { QueuesModule } from './queues/queues.module';
 import { CronModule } from './cron/cron.module';
+import { DiscoveryModule } from './modules/discovery/discovery.module';
+import { FacultyScraperModule } from './modules/faculty-scraper/faculty-scraper.module';
+import { ProfessorSyncModule } from './modules/professor-sync/professor-sync.module';
+import { SyncLogsModule } from './modules/sync-logs/sync-logs.module';
+import { SystemHealthModule } from './modules/system-health/system-health.module';
+import { OutreachModule } from './modules/outreach/outreach.module';
+import { OpportunitiesModule } from './modules/opportunities/opportunities.module';
+import { SecurityModule } from './modules/security/security.module';
+import { ObservabilityModule } from './modules/observability/observability.module';
+import { BackupsModule } from './modules/backups/backups.module';
+import { AdminAuditInterceptor } from './modules/security/admin-audit.interceptor';
 
 @Module({
   imports: [
@@ -42,6 +56,7 @@ import { CronModule } from './cron/cron.module';
     ThrottlerModule.forRoot([{ ttl: 60000, limit: 200 }]),
     AppConfigModule,
     PrismaModule,
+    RequestContextModule,
     RedisModule,
     StorageModule,
     AuthModule,
@@ -68,10 +83,25 @@ import { CronModule } from './cron/cron.module';
     AnalyticsModule,
     StudentProfileModule,
     AdminModule,
+    AdminProfessorsModule,
     HealthModule,
     WebhooksModule,
+    DiscoveryModule,
+    FacultyScraperModule,
+    ProfessorSyncModule,
+    SyncLogsModule,
+    SystemHealthModule,
+    OutreachModule,
+    OpportunitiesModule,
+    SecurityModule,
+    ObservabilityModule,
+    BackupsModule,
     QueuesModule,
     CronModule,
+  ],
+  providers: [
+    { provide: APP_GUARD, useClass: ThrottlerGuard },
+    { provide: APP_INTERCEPTOR, useClass: AdminAuditInterceptor },
   ],
 })
 export class AppModule {}

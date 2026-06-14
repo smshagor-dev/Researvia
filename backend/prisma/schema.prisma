@@ -169,6 +169,7 @@ enum DataSource {
   openalex
   orcid
   crossref
+  ror
   manual
   import
 }
@@ -185,6 +186,21 @@ enum VerificationStatus {
   verified
   failed
   manual_review
+}
+
+enum EmailVerificationStatus {
+  pending
+  verified
+  rejected
+  manual_review
+}
+
+enum EmailSourceType {
+  faculty_page
+  department_page
+  lab_page
+  directory_page
+  manual
 }
 
 enum VerificationSource {
@@ -210,9 +226,15 @@ enum FundingType {
   stipend_only
   tuition_only
   other
+  scholarship
+  grant
+  assistantship
+  fellowship
+  internship
+  exchange
 }
 
-enum ScholarshipSource {
+enum ScholarshipOrigin {
   manual
   scraped
   api
@@ -229,9 +251,80 @@ enum FavoriteStatus {
 
 enum ApplicationStatus {
   saved
+  planning
   applied
+  under_review
+  interview
+  offer_received
   accepted
   rejected
+  withdrawn
+}
+
+enum OpportunityType {
+  phd_position
+  research_assistant
+  teaching_assistant
+  research_internship
+  lab_position
+  research_grant
+  fellowship
+  postdoc
+  exchange_program
+}
+
+enum OpportunityVerificationStatus {
+  pending
+  verified
+  rejected
+  manual_review
+}
+
+enum OpportunityStatus {
+  draft
+  active
+  expired
+  closed
+  archived
+}
+
+enum InterviewStatus {
+  scheduled
+  completed
+  cancelled
+  rescheduled
+}
+
+enum ScholarshipStatus {
+  draft
+  active
+  expired
+  closed
+}
+
+enum ScholarshipVerificationStatus {
+  pending
+  verified
+  rejected
+}
+
+enum ScholarshipDegreeLevel {
+  bachelor
+  master
+  phd
+  postdoc
+  mixed
+}
+
+enum ScholarshipSourceType {
+  manual
+  daad
+  erasmus
+  fulbright
+  chevening
+  mext
+  commonwealth
+  university
 }
 
 enum AccountType {
@@ -264,11 +357,28 @@ enum MailboxStatus {
 
 enum ThreadStatus {
   draft
+  active
   scheduled
   sent
   replied
+  accepted
+  rejected
+  archived
   bounced
   unsubscribed
+}
+
+enum PipelineStage {
+  saved
+  planned
+  contacted
+  followup1
+  followup2
+  followup3
+  replied
+  meeting
+  accepted
+  rejected
 }
 
 enum MessageDirection {
@@ -293,7 +403,9 @@ enum MessageStatus {
 enum EmailTrackingEventType {
   open
   click
+  delivered
   delivery
+  replied
   bounce
   complaint
 }
@@ -327,9 +439,60 @@ enum CreditTransactionType {
   ai_generation
   professor_reveal
   email_send
+  scholarship_unlock
+  opportunity_unlock
   referral
   admin_adjustment
   refund
+  bonus
+}
+
+enum BillingCycle {
+  monthly
+  yearly
+}
+
+enum UsageMetricType {
+  professor_reveal
+  ai_generation
+  email_send
+  scholarship_unlock
+  opportunity_unlock
+}
+
+enum DiscountType {
+  percentage
+  fixed
+}
+
+enum TeamRole {
+  owner
+  admin
+  member
+}
+
+enum InvoiceStatus {
+  draft
+  open
+  paid
+  uncollectible
+  void
+}
+
+enum BackupType {
+  database
+  storage
+  configuration
+  full_snapshot
+}
+
+enum BackupStatus {
+  pending
+  running
+  completed
+  failed
+  restoring
+  restored
 }
 
 enum NotificationChannel {
@@ -384,6 +547,42 @@ enum ApiSource {
   ai
 }
 
+enum SyncLogStatus {
+  queued
+  running
+  completed
+  failed
+  partial
+}
+
+enum WorkerStatus {
+  starting
+  healthy
+  degraded
+  offline
+  stopped
+}
+
+enum MatchTargetType {
+  professor
+  scholarship
+}
+
+enum CvParseStatus {
+  pending
+  parsed
+  failed
+  confirmed
+}
+
+enum AIModelProvider {
+  deterministic
+  openai
+  anthropic
+  gemini
+  deepseek
+}
+
 // ─── Models ──────────────────────────────────────────────────────────────────
 
 model User {
@@ -400,12 +599,17 @@ model User {
   twoFactorBackupCodes Json?     @map("two_factor_backup_codes")
   lastLoginAt          DateTime? @map("last_login_at")
   lastLoginIp          String?   @map("last_login_ip") @db.VarChar(45)
+  failedLoginAttempts  Int       @default(0) @map("failed_login_attempts")
+  lockedUntil          DateTime? @map("locked_until")
+  tokenVersion         Int       @default(0) @map("token_version")
+  passwordChangedAt    DateTime? @map("password_changed_at")
   createdAt            DateTime  @default(now()) @map("created_at")
   updatedAt            DateTime  @updatedAt @map("updated_at")
   deletedAt            DateTime? @map("deleted_at")
 
   profile           UserProfile?
   studentProfile    StudentProfile?
+  academicProfile   StudentAcademicProfile?
   oauthAccounts     OauthAccount[]
   smtpAccounts      SmtpAccount[]
   emailAccounts     EmailAccount[]
@@ -414,11 +618,22 @@ model User {
   creditTransactions CreditTransaction[]
   emailThreads      EmailThread[]
   emailMessages     EmailMessage[]
+  followupSequences FollowupSequence[]
+  applications      Application[]
   favorites         Favorite[]
   savedScholarships SavedScholarship[]
   notifications     Notification[]
   activityLogs      ActivityLog[]
   imports           Import[]
+  emailRevealLogs   EmailRevealLog[]
+  matchScores       MatchScore[]
+  cvParseLogs       CvParseLog[]
+  usageMetrics      UsageMetric[]
+  invoices          BillingInvoice[]
+  subscriptionsOwned Team[] @relation("TeamOwner")
+  teamMemberships   TeamMember[]
+  couponRedemptions CouponRedemption[]
+  sessions          ActiveSession[]
 
   @@index([status, deletedAt])
   @@map("users")
@@ -479,7 +694,7 @@ model StudentProfile {
   updatedAt             DateTime                 @updatedAt @map("updated_at")
 
   user              User                      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  education         StudentEducation?
+  educations        StudentEducation[]
   researchInterest  StudentResearchInterest?
   skills            StudentSkill[]
   experiences       StudentExperience[]
@@ -495,9 +710,42 @@ model StudentProfile {
   @@map("student_profiles")
 }
 
+model StudentAcademicProfile {
+  id                        String          @id @default(uuid()) @db.Char(36)
+  userId                    String          @unique @map("user_id") @db.Char(36)
+  currentDegreeLevel        StudentDegreeLevel? @map("current_degree_level")
+  currentUniversity         String?         @map("current_university") @db.VarChar(255)
+  currentDepartment         String?         @map("current_department") @db.VarChar(255)
+  targetDegree              StudentInterestedDegree? @map("target_degree")
+  targetIntake              String?         @map("target_intake") @db.VarChar(100)
+  gpa                       Decimal?        @db.Decimal(4, 2)
+  gradingScale              String?         @map("grading_scale") @db.VarChar(50)
+  researchSummary           String?         @map("research_summary") @db.Text
+  cvText                    String?         @map("cv_text") @db.LongText
+  publicationsCount         Int             @default(0) @map("publications_count")
+  researchExperienceYears   Decimal?        @map("research_experience_years") @db.Decimal(4, 1)
+  preferredCountriesJson    Json?           @map("preferred_countries_json")
+  preferredUniversitiesJson Json?           @map("preferred_universities_json")
+  preferredFundingTypesJson Json?           @map("preferred_funding_types_json")
+  preferredResearchAreasJson Json?          @map("preferred_research_areas_json")
+  lastParsedAt              DateTime?       @map("last_parsed_at")
+  lastConfirmedAt           DateTime?       @map("last_confirmed_at")
+  parseStatus               CvParseStatus   @default(pending) @map("parse_status")
+  createdAt                 DateTime        @default(now()) @map("created_at")
+  updatedAt                 DateTime        @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([targetDegree])
+  @@index([updatedAt])
+  @@map("student_academic_profiles")
+}
+
 model StudentEducation {
   id                      String             @id @default(uuid()) @db.Char(36)
-  studentProfileId        String             @unique @map("student_profile_id") @db.Char(36)
+  studentProfileId        String             @map("student_profile_id") @db.Char(36)
+  isCurrent               Boolean            @default(false) @map("is_current")
+  sortOrder               Int                @default(0) @map("sort_order")
   degreeLevel             StudentDegreeLevel @map("degree_level")
   university              String             @db.VarChar(255)
   department              String             @db.VarChar(255)
@@ -514,6 +762,8 @@ model StudentEducation {
 
   studentProfile StudentProfile @relation(fields: [studentProfileId], references: [id], onDelete: Cascade)
 
+  @@index([studentProfileId, isCurrent])
+  @@index([studentProfileId, sortOrder])
   @@map("student_educations")
 }
 
@@ -528,7 +778,7 @@ model StudentResearchInterest {
   preferredCountries    Json                    @map("preferred_countries")
   preferredUniversities Json?                   @map("preferred_universities")
   preferredIntake       String?                 @map("preferred_intake") @db.VarChar(100)
-  fundingNeed           FundingNeed             @map("funding_need")
+  fundingNeed           Json                    @map("funding_need")
   createdAt             DateTime                @default(now()) @map("created_at")
   updatedAt             DateTime                @updatedAt @map("updated_at")
 
@@ -593,6 +843,8 @@ model StudentPublication {
   year                Int?
   doi                 String?  @db.VarChar(255)
   url                 String?  @db.VarChar(500)
+  publishedAt         DateTime? @map("published_at") @db.Date
+  description         String?  @db.Text
   createdAt           DateTime @default(now()) @map("created_at")
   updatedAt           DateTime @updatedAt @map("updated_at")
 
@@ -790,6 +1042,7 @@ model Country {
 
   universities University[]
   scholarships Scholarship[]
+  opportunities Opportunity[]
 
   @@map("countries")
 }
@@ -821,6 +1074,7 @@ model University {
   departments Department[]
   professors  Professor[]
   scholarships Scholarship[]
+  opportunities Opportunity[]
 
   @@index([countryId])
   @@index([status])
@@ -842,6 +1096,7 @@ model Department {
 
   university University  @relation(fields: [universityId], references: [id], onDelete: Cascade)
   professors Professor[]
+  opportunities Opportunity[]
 
   @@unique([universityId, slug])
   @@index([universityId])
@@ -873,52 +1128,208 @@ model Professor {
   lastPublicationYear Int?               @map("last_publication_year")
   status              ProfessorStatus    @default(active)
   dataSource          DataSource         @map("data_source")
+  verificationStatus  VerificationStatus @default(pending) @map("verification_status")
+  isPublic            Boolean            @default(false) @map("is_public")
+  sourceType          DataSource         @default(manual) @map("source_type")
+  lastSyncedAt        DateTime?          @map("last_synced_at")
+  lastVerifiedAt      DateTime?          @map("last_verified_at")
+  dataQualityScore    Int?               @map("data_quality_score")
   lastEnrichedAt      DateTime?          @map("last_enriched_at")
+  facultyPageUrl      String?            @map("faculty_page_url") @db.VarChar(1000)
+  lastScrapedAt       DateTime?          @map("last_scraped_at")
   createdAt           DateTime           @default(now()) @map("created_at")
   updatedAt           DateTime           @updatedAt @map("updated_at")
 
   university    University              @relation(fields: [universityId], references: [id])
   department    Department?             @relation(fields: [departmentId], references: [id])
   emails        ProfessorEmail[]
+  sources       ProfessorSource[]
   researchAreas ProfessorResearchArea[]
   publications  Publication[]
   favorites     Favorite[]
   emailThreads  EmailThread[]
+  outreachDailyCounters OutreachDailyCounter[]
+  opportunities Opportunity[]
+  emailRevealLogs EmailRevealLog[]
 
   @@index([universityId])
   @@index([departmentId])
   @@index([status])
+  @@index([verificationStatus])
+  @@index([isPublic])
+  @@index([sourceType])
   @@index([acceptingStudents])
   @@index([hIndex])
   @@fulltext([fullName])
   @@map("professors")
 }
 
+model ProfessorSource {
+  id             String     @id @default(uuid()) @db.Char(36)
+  professorId    String     @map("professor_id") @db.Char(36)
+  sourceType     DataSource @map("source_type")
+  sourceName     String     @map("source_name") @db.VarChar(100)
+  externalId     String?    @map("external_id") @db.VarChar(120)
+  sourceUrl      String?    @map("source_url") @db.VarChar(750)
+  rawPayloadJson Json?      @map("raw_payload_json")
+  scrapedAt      DateTime   @default(now()) @map("scraped_at")
+  createdAt      DateTime   @default(now()) @map("created_at")
+  updatedAt      DateTime   @updatedAt @map("updated_at")
+
+  professor Professor @relation(fields: [professorId], references: [id], onDelete: Cascade)
+
+  @@unique([professorId, sourceType, externalId])
+  @@index([professorId])
+  @@index([sourceType])
+  @@index([externalId])
+  @@index([sourceUrl])
+  @@map("professor_sources")
+}
+
+model SyncLog {
+  id           String        @id @default(uuid()) @db.Char(36)
+  jobId        String?       @map("job_id") @db.VarChar(100)
+  queueName    String        @map("queue_name") @db.VarChar(100)
+  jobName      String        @map("job_name") @db.VarChar(100)
+  status       SyncLogStatus
+  sourceType   DataSource?   @map("source_type")
+  startedAt    DateTime?     @map("started_at")
+  completedAt  DateTime?     @map("completed_at")
+  failedAt     DateTime?     @map("failed_at")
+  errorMessage String?       @map("error_message") @db.Text
+  processedCount Int         @default(0) @map("processed_count")
+  createdCount Int           @default(0) @map("created_count")
+  updatedCount Int           @default(0) @map("updated_count")
+  skippedCount Int           @default(0) @map("skipped_count")
+  metadataJson Json?         @map("metadata_json")
+  createdAt    DateTime      @default(now()) @map("created_at")
+
+  @@index([jobId])
+  @@index([queueName, status])
+  @@index([sourceType])
+  @@index([createdAt])
+  @@map("sync_logs")
+}
+
+model WorkerHeartbeat {
+  id                 String       @id @default(uuid()) @db.Char(36)
+  workerName         String       @map("worker_name") @db.VarChar(120)
+  queueName          String       @map("queue_name") @db.VarChar(120)
+  status             WorkerStatus
+  processId          Int          @map("process_id")
+  hostname           String       @db.VarChar(255)
+  lastHeartbeatAt    DateTime     @map("last_heartbeat_at")
+  lastJobProcessedAt DateTime?    @map("last_job_processed_at")
+  lastErrorMessage   String?      @map("last_error_message") @db.Text
+  metadataJson       Json?        @map("metadata_json")
+  createdAt          DateTime     @default(now()) @map("created_at")
+  updatedAt          DateTime     @updatedAt @map("updated_at")
+
+  @@unique([workerName, queueName, hostname])
+  @@index([queueName, status])
+  @@index([lastHeartbeatAt])
+  @@map("worker_heartbeats")
+}
+
+model MatchScore {
+  id                    String           @id @default(uuid()) @db.Char(36)
+  userId                String           @map("user_id") @db.Char(36)
+  targetType            MatchTargetType  @map("target_type")
+  targetId              String           @map("target_id") @db.Char(36)
+  score                 Int
+  scoreBand             String?          @map("score_band") @db.VarChar(50)
+  breakdownJson         Json?            @map("breakdown_json")
+  strengthsJson         Json?            @map("strengths_json")
+  weaknessesJson        Json?            @map("weaknesses_json")
+  recommendationsJson   Json?            @map("recommendations_json")
+  explanation           String?          @db.Text
+  aiSummary             String?          @map("ai_summary") @db.Text
+  provider              AIModelProvider  @default(deterministic)
+  modelName             String?          @map("model_name") @db.VarChar(120)
+  version               String?          @db.VarChar(50)
+  calculatedAt          DateTime         @default(now()) @map("calculated_at")
+  profileSnapshotHash   String?          @map("profile_snapshot_hash") @db.VarChar(64)
+  targetSnapshotHash    String?          @map("target_snapshot_hash") @db.VarChar(64)
+  createdAt             DateTime         @default(now()) @map("created_at")
+  updatedAt             DateTime         @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, targetType, targetId])
+  @@index([userId, targetType, calculatedAt])
+  @@index([targetType, targetId])
+  @@map("match_scores")
+}
+
+model CvParseLog {
+  id                  String           @id @default(uuid()) @db.Char(36)
+  userId              String           @map("user_id") @db.Char(36)
+  status              CvParseStatus    @default(pending)
+  provider            AIModelProvider  @default(deterministic)
+  sourceFileName      String?          @map("source_file_name") @db.VarChar(255)
+  rawText             String?          @map("raw_text") @db.LongText
+  extractedJson       Json?            @map("extracted_json")
+  errorMessage        String?          @map("error_message") @db.Text
+  confirmedAt         DateTime?        @map("confirmed_at")
+  createdAt           DateTime         @default(now()) @map("created_at")
+  updatedAt           DateTime         @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([status])
+  @@map("cv_parse_logs")
+}
+
 model ProfessorEmail {
-  id                  String             @id @default(uuid()) @db.Char(36)
-  professorId         String             @map("professor_id") @db.Char(36)
-  email               String             @db.VarChar(255)
-  type                EmailType          @default(institutional)
-  isPrimary           Boolean            @default(false) @map("is_primary")
-  isVerified          Boolean            @default(false) @map("is_verified")
-  verificationStatus  VerificationStatus @default(pending) @map("verification_status")
-  verificationSource  VerificationSource? @map("verification_source")
-  domainMatch         Boolean            @default(false) @map("domain_match")
-  mxValid             Boolean?           @map("mx_valid")
-  smtpValid           Boolean?           @map("smtp_valid")
-  verifiedAt          DateTime?          @map("verified_at")
-  verifiedBy          String?            @map("verified_by") @db.Char(36)
-  rejectReason        String?            @map("reject_reason") @db.VarChar(500)
-  createdAt           DateTime           @default(now()) @map("created_at")
-  updatedAt           DateTime           @updatedAt @map("updated_at")
+  id                String                  @id @default(uuid()) @db.Char(36)
+  professorId       String                  @map("professor_id") @db.Char(36)
+  email             String                  @unique @db.VarChar(255)
+  emailHash         String                  @map("email_hash") @db.Char(64)
+  sourceUrl         String?                 @map("source_url") @db.VarChar(1000)
+  sourceDomain      String?                 @map("source_domain") @db.VarChar(255)
+  sourceType        EmailSourceType         @default(manual) @map("source_type")
+  type              EmailType               @default(institutional)
+  isPrimary         Boolean                 @default(false) @map("is_primary")
+  isVerified        Boolean                 @default(false) @map("is_verified")
+  domainMatched     Boolean                 @default(false) @map("domain_matched")
+  mxValid           Boolean?                @map("mx_valid")
+  smtpValid         Boolean?                @map("smtp_valid")
+  confidenceScore   Int                     @default(0) @map("confidence_score")
+  verificationStatus EmailVerificationStatus @default(pending) @map("verification_status")
+  verificationSource VerificationSource?    @map("verification_source")
+  verifiedAt        DateTime?               @map("verified_at")
+  verifiedByAdminId String?                 @map("verified_by_admin_id") @db.Char(36)
+  rejectReason      String?                 @map("reject_reason") @db.VarChar(500)
+  createdAt         DateTime                @default(now()) @map("created_at")
+  updatedAt         DateTime                @updatedAt @map("updated_at")
 
   professor        Professor         @relation(fields: [professorId], references: [id], onDelete: Cascade)
   verificationLogs VerificationLog[]
+  revealLogs       EmailRevealLog[]
 
-  @@unique([professorId, email])
   @@index([professorId])
-  @@index([isVerified, verificationStatus])
+  @@index([verificationStatus])
+  @@index([sourceDomain])
   @@map("professor_emails")
+}
+
+model EmailRevealLog {
+  id          String   @id @default(uuid()) @db.Char(36)
+  userId      String   @map("user_id") @db.Char(36)
+  professorId String   @map("professor_id") @db.Char(36)
+  emailId     String   @map("email_id") @db.Char(36)
+  creditsUsed Int      @default(0) @map("credits_used")
+  revealedAt  DateTime @default(now()) @map("revealed_at")
+
+  user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  professor Professor      @relation(fields: [professorId], references: [id], onDelete: Cascade)
+  email     ProfessorEmail @relation(fields: [emailId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, professorId])
+  @@index([emailId])
+  @@index([revealedAt])
+  @@map("email_reveal_logs")
 }
 
 model ResearchArea {
@@ -985,41 +1396,86 @@ model Scholarship {
   id                   String           @id @default(uuid()) @db.Char(36)
   title                String           @db.VarChar(500)
   slug                 String           @unique @db.VarChar(500)
+  providerName         String?          @map("provider_name") @db.VarChar(255)
+  providerType         String?          @map("provider_type") @db.VarChar(100)
   description          String?          @db.Text
   countryId            String?          @map("country_id") @db.Char(36)
   universityId         String?          @map("university_id") @db.Char(36)
   fundingType          FundingType
+  degreeLevel          ScholarshipDegreeLevel? @map("degree_level")
   degreeLevels         Json             @map("degree_levels")
   fieldsOfStudy        Json?            @map("fields_of_study")
+  fundingAmount        Decimal?         @map("funding_amount") @db.Decimal(12, 2)
   amount               Decimal?         @db.Decimal(12, 2)
   currency             String?          @db.Char(3)
+  isFullyFunded        Boolean          @default(false) @map("is_fully_funded")
+  applicationUrl       String?          @map("application_url") @db.VarChar(1000)
+  officialSourceUrl    String?          @map("official_source_url") @db.VarChar(1000)
   deadline             DateTime?        @db.Date
+  applicationOpenDate  DateTime?        @map("application_open_date") @db.Date
+  applicationCloseDate DateTime?        @map("application_close_date") @db.Date
   startDate            DateTime?        @map("start_date") @db.Date
   durationMonths       Int?             @map("duration_months")
+  eligibilityCriteria  String?          @map("eligibility_criteria") @db.Text
   eligibility          String?          @db.Text
+  requiredDocuments    Json?            @map("required_documents")
+  researchAreas        Json?            @map("research_areas")
   eligibilityCountries Json?            @map("eligibility_countries")
   officialUrl          String           @map("official_url") @db.VarChar(1000)
-  source               ScholarshipSource @default(manual)
+  source               ScholarshipOrigin @default(manual)
+  sourceType           ScholarshipSourceType @default(manual) @map("source_type")
+  sourceExternalId     String?          @map("source_external_id") @db.VarChar(255)
   sourceUrl            String?          @map("source_url") @db.VarChar(1000)
+  status               ScholarshipStatus @default(draft)
+  verificationStatus   ScholarshipVerificationStatus @default(pending) @map("verification_status")
   isVerified           Boolean          @default(false) @map("is_verified")
   isActive             Boolean          @default(true) @map("is_active")
   isExpired            Boolean          @default(false) @map("is_expired")
   expiresAt            DateTime?        @map("expires_at")
+  lastSyncedAt         DateTime?        @map("last_synced_at")
+  qualityScore         Int              @default(0) @map("quality_score")
   viewCount            Int              @default(0) @map("view_count")
   saveCount            Int              @default(0) @map("save_count")
+  applicationCount     Int              @default(0) @map("application_count")
   duplicateOf          String?          @map("duplicate_of") @db.Char(36)
+  duplicateKey         String?          @map("duplicate_key") @db.VarChar(255)
+  needsReview          Boolean          @default(false) @map("needs_review")
   createdAt            DateTime         @default(now()) @map("created_at")
   updatedAt            DateTime         @updatedAt @map("updated_at")
 
   country           Country?           @relation(fields: [countryId], references: [id])
   university        University?        @relation(fields: [universityId], references: [id])
   savedScholarships SavedScholarship[]
+  sources           ScholarshipSource[]
 
   @@index([isActive, isExpired])
-  @@index([deadline])
   @@index([countryId])
+  @@index([universityId])
+  @@index([degreeLevel])
+  @@index([deadline])
+  @@index([status])
+  @@index([verificationStatus])
   @@fulltext([title])
   @@map("scholarships")
+}
+
+model ScholarshipSource {
+  id            String                @id @default(uuid()) @db.Char(36)
+  scholarshipId String                @map("scholarship_id") @db.Char(36)
+  sourceType    ScholarshipSourceType @map("source_type")
+  sourceName    String                @map("source_name") @db.VarChar(100)
+  sourceUrl     String                @map("source_url") @db.VarChar(1000)
+  externalId    String?               @map("external_id") @db.VarChar(255)
+  rawPayloadJson Json?                @map("raw_payload_json")
+  scrapedAt     DateTime              @default(now()) @map("scraped_at")
+  createdAt     DateTime              @default(now()) @map("created_at")
+
+  scholarship Scholarship @relation(fields: [scholarshipId], references: [id], onDelete: Cascade)
+
+  @@index([scholarshipId])
+  @@index([sourceType])
+  @@index([externalId])
+  @@map("scholarship_sources")
 }
 
 model Favorite {
@@ -1046,6 +1502,7 @@ model SavedScholarship {
   reminderDaysBefore  Int?              @map("reminder_days_before")
   applicationStatus   ApplicationStatus @default(saved) @map("application_status")
   notes               String?           @db.Text
+  savedAt             DateTime          @default(now()) @map("saved_at")
   createdAt           DateTime          @default(now()) @map("created_at")
   updatedAt           DateTime          @updatedAt @map("updated_at")
 
@@ -1057,6 +1514,86 @@ model SavedScholarship {
   @@map("saved_scholarships")
 }
 
+model Opportunity {
+  id                 String                        @id @default(uuid()) @db.Char(36)
+  title              String                        @db.VarChar(500)
+  slug               String                        @unique @db.VarChar(600)
+  type               OpportunityType
+  countryId          String?                       @map("country_id") @db.Char(36)
+  universityId       String?                       @map("university_id") @db.Char(36)
+  departmentId       String?                       @map("department_id") @db.Char(36)
+  professorId        String?                       @map("professor_id") @db.Char(36)
+  fundingAmount      Decimal?                      @map("funding_amount") @db.Decimal(12, 2)
+  currency           String?                       @db.Char(3)
+  isFullyFunded      Boolean                       @default(false) @map("is_fully_funded")
+  description        String                        @db.LongText
+  requirements       String?                       @db.LongText
+  deadline           DateTime?                     @db.Date
+  officialUrl        String?                       @map("official_url") @db.VarChar(1000)
+  sourceUrl          String?                       @map("source_url") @db.VarChar(1000)
+  verificationStatus OpportunityVerificationStatus @default(pending) @map("verification_status")
+  status             OpportunityStatus             @default(draft)
+  qualityScore       Int                           @default(0) @map("quality_score")
+  createdAt          DateTime                      @default(now()) @map("created_at")
+  updatedAt          DateTime                      @updatedAt @map("updated_at")
+
+  country      Country?      @relation(fields: [countryId], references: [id])
+  university   University?   @relation(fields: [universityId], references: [id])
+  department   Department?   @relation(fields: [departmentId], references: [id])
+  professor    Professor?    @relation(fields: [professorId], references: [id])
+  applications Application[]
+
+  @@index([type])
+  @@index([countryId])
+  @@index([universityId])
+  @@index([departmentId])
+  @@index([professorId])
+  @@index([deadline])
+  @@index([status, verificationStatus])
+  @@index([qualityScore])
+  @@fulltext([title])
+  @@map("opportunities")
+}
+
+model Application {
+  id            String            @id @default(uuid()) @db.Char(36)
+  userId        String            @map("user_id") @db.Char(36)
+  opportunityId String            @map("opportunity_id") @db.Char(36)
+  status        ApplicationStatus @default(saved)
+  submittedAt   DateTime?         @map("submitted_at")
+  lastUpdatedAt DateTime          @default(now()) @updatedAt @map("last_updated_at")
+  notes         String?           @db.Text
+  createdAt     DateTime          @default(now()) @map("created_at")
+
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  opportunity Opportunity @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+  interviews  Interview[]
+
+  @@unique([userId, opportunityId])
+  @@index([userId, status])
+  @@index([opportunityId])
+  @@index([submittedAt])
+  @@map("applications")
+}
+
+model Interview {
+  id            String          @id @default(uuid()) @db.Char(36)
+  applicationId String          @map("application_id") @db.Char(36)
+  scheduledAt   DateTime        @map("scheduled_at")
+  timezone      String          @db.VarChar(100)
+  meetingLink   String?         @map("meeting_link") @db.VarChar(1000)
+  notes         String?         @db.Text
+  status        InterviewStatus @default(scheduled)
+  createdAt     DateTime        @default(now()) @map("created_at")
+  updatedAt     DateTime        @updatedAt @map("updated_at")
+
+  application Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  @@index([applicationId])
+  @@index([scheduledAt, status])
+  @@map("interviews")
+}
+
 model EmailThread {
   id                    String       @id @default(uuid()) @db.Char(36)
   userId                String       @map("user_id") @db.Char(36)
@@ -1065,7 +1602,14 @@ model EmailThread {
   accountType           AccountType  @map("account_type")
   accountId             String       @map("account_id") @db.Char(36)
   status                ThreadStatus @default(draft)
+  currentStage          PipelineStage @default(saved) @map("current_stage")
   lastMessageAt         DateTime?    @map("last_message_at")
+  replyReceived         Boolean      @default(false) @map("reply_received")
+  openCount             Int          @default(0) @map("open_count")
+  sentCount             Int          @default(0) @map("sent_count")
+  lastFollowupAt        DateTime?    @map("last_followup_at")
+  pausedAt              DateTime?    @map("paused_at")
+  followupSequenceId    String?      @map("followup_sequence_id") @db.Char(36)
   messageCount          Int          @default(0) @map("message_count")
   unreadCount           Int          @default(0) @map("unread_count")
   gmailThreadId         String?      @map("gmail_thread_id") @db.VarChar(50)
@@ -1078,10 +1622,13 @@ model EmailThread {
   smtpAccount SmtpAccount?  @relation(fields: [accountId], references: [id], map: "fk_thread_smtp")
   oauthAccount OauthAccount? @relation(fields: [accountId], references: [id], map: "fk_thread_oauth")
   messages    EmailMessage[]
+  followupSequence FollowupSequence? @relation(fields: [followupSequenceId], references: [id])
 
   @@index([userId])
   @@index([professorId])
   @@index([status])
+  @@index([currentStage])
+  @@unique([userId, professorId])
   @@map("email_threads")
 }
 
@@ -1097,9 +1644,13 @@ model EmailMessage {
   bccEmails       Json?           @map("bcc_emails")
   replyTo         String?         @map("reply_to") @db.VarChar(255)
   subject         String?         @db.VarChar(998)
+  body            String?         @db.LongText
   bodyHtml        String?         @map("body_html") @db.LongText
   bodyText        String?         @map("body_text") @db.LongText
+  provider        String?         @db.VarChar(50)
+  trackingToken   String?         @unique @map("tracking_token") @db.VarChar(100)
   messageIdHeader String?         @map("message_id_header") @db.VarChar(500)
+  providerMessageId String?       @map("provider_message_id") @db.VarChar(500)
   inReplyTo       String?         @map("in_reply_to") @db.VarChar(500)
   status          MessageStatus   @default(draft)
   scheduledAt     DateTime?       @map("scheduled_at")
@@ -1124,9 +1675,60 @@ model EmailMessage {
 
   @@index([threadId])
   @@index([status])
+  @@index([trackingToken])
   @@index([scheduledAt, status])
   @@index([messageIdHeader])
   @@map("email_messages")
+}
+
+model FollowupSequence {
+  id        String   @id @default(uuid()) @db.Char(36)
+  userId    String   @map("user_id") @db.Char(36)
+  name      String   @db.VarChar(120)
+  enabled   Boolean  @default(true)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user    User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  steps   FollowupStep[]
+  threads EmailThread[]
+
+  @@unique([userId, name])
+  @@index([userId, enabled])
+  @@map("followup_sequences")
+}
+
+model FollowupStep {
+  id         String   @id @default(uuid()) @db.Char(36)
+  sequenceId String   @map("sequence_id") @db.Char(36)
+  stage      PipelineStage
+  dayOffset  Int      @map("day_offset")
+  template   String   @db.Text
+  sortOrder  Int      @default(0) @map("sort_order")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  sequence FollowupSequence @relation(fields: [sequenceId], references: [id], onDelete: Cascade)
+
+  @@unique([sequenceId, stage])
+  @@index([sequenceId, dayOffset])
+  @@map("followup_steps")
+}
+
+model OutreachDailyCounter {
+  id          String   @id @default(uuid()) @db.Char(36)
+  userId      String   @map("user_id") @db.Char(36)
+  professorId String?  @map("professor_id") @db.Char(36)
+  sendDate    DateTime @map("send_date") @db.Date
+  sentCount   Int      @default(0) @map("sent_count")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  professor Professor? @relation(fields: [professorId], references: [id], onDelete: SetNull)
+
+  @@unique([userId, sendDate])
+  @@index([sendDate])
+  @@index([professorId])
+  @@map("outreach_daily_counters")
 }
 
 model EmailTracking {
@@ -1190,6 +1792,8 @@ model SubscriptionPlan {
   emailSendsPerDay         Int      @map("email_sends_per_day")
   professorRevealsPerMonth Int      @map("professor_reveals_per_month")
   aiGenerationsPerMonth    Int      @map("ai_generations_per_month")
+  opportunityUnlocksPerMonth Int    @default(0) @map("opportunity_unlocks_per_month")
+  scholarshipUnlocksPerMonth Int    @default(0) @map("scholarship_unlocks_per_month")
   maxSavedProfessors       Int      @map("max_saved_professors")
   maxSavedScholarships     Int      @map("max_saved_scholarships")
   maxSmtpAccounts          Int      @map("max_smtp_accounts")
@@ -1198,11 +1802,13 @@ model SubscriptionPlan {
   hasAiMatchScore          Boolean  @default(false) @map("has_ai_match_score")
   hasBulkEmail             Boolean  @default(false) @map("has_bulk_email")
   hasAnalytics             Boolean  @default(false) @map("has_analytics")
+  hasTeamAccess            Boolean  @default(false) @map("has_team_access")
   isActive                 Boolean  @default(true) @map("is_active")
   sortOrder                Int      @default(0) @map("sort_order")
   createdAt                DateTime @default(now()) @map("created_at")
 
   subscriptions Subscription[]
+  teams         Team[]
 
   @@map("subscription_plans")
 }
@@ -1213,6 +1819,7 @@ model Subscription {
   planId               String             @map("plan_id") @db.Char(36)
   stripeSubscriptionId String?            @unique @map("stripe_subscription_id") @db.VarChar(100)
   stripeCustomerId     String?            @map("stripe_customer_id") @db.VarChar(100)
+  billingCycle         BillingCycle       @default(monthly) @map("billing_cycle")
   status               SubscriptionStatus
   currentPeriodStart   DateTime?          @map("current_period_start")
   currentPeriodEnd     DateTime?          @map("current_period_end")
@@ -1227,6 +1834,7 @@ model Subscription {
 
   user User             @relation(fields: [userId], references: [id], onDelete: Cascade)
   plan SubscriptionPlan @relation(fields: [planId], references: [id])
+  invoices BillingInvoice[]
 
   @@index([userId])
   @@index([status])
@@ -1239,9 +1847,11 @@ model Credits {
   balance        Int      @default(0)
   lifetimeEarned Int      @default(0) @map("lifetime_earned")
   lifetimeSpent  Int      @default(0) @map("lifetime_spent")
+  createdAt      DateTime @default(now()) @map("created_at")
   updatedAt      DateTime @updatedAt @map("updated_at")
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactions CreditTransaction[]
 
   @@map("credits")
 }
@@ -1249,18 +1859,137 @@ model Credits {
 model CreditTransaction {
   id            BigInt                @id @default(autoincrement())
   userId        String                @map("user_id") @db.Char(36)
+  walletId      String?               @map("wallet_id") @db.Char(36)
   amount        Int
   type          CreditTransactionType
   referenceId   String?               @map("reference_id") @db.Char(36)
   referenceType String?               @map("reference_type") @db.VarChar(50)
+  reason        String?               @db.VarChar(255)
   description   String?               @db.VarChar(500)
+  metadataJson  Json?                 @map("metadata_json")
   balanceAfter  Int                   @map("balance_after")
   createdAt     DateTime              @default(now()) @map("created_at")
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  wallet Credits? @relation(fields: [walletId], references: [id], onDelete: SetNull)
 
   @@index([userId, createdAt])
+  @@index([walletId, createdAt])
   @@map("credit_transactions")
+}
+
+model UsageMetric {
+  id          String          @id @default(uuid()) @db.Char(36)
+  userId      String          @map("user_id") @db.Char(36)
+  metricType  UsageMetricType @map("metric_type")
+  count       Int             @default(0)
+  periodStart DateTime        @map("period_start") @db.Date
+  periodEnd   DateTime        @map("period_end") @db.Date
+  createdAt   DateTime        @default(now()) @map("created_at")
+  updatedAt   DateTime        @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, metricType, periodStart, periodEnd])
+  @@index([userId, periodStart])
+  @@index([metricType, periodStart])
+  @@map("usage_metrics")
+}
+
+model BillingInvoice {
+  id                   String        @id @default(uuid()) @db.Char(36)
+  userId               String        @map("user_id") @db.Char(36)
+  subscriptionId       String?       @map("subscription_id") @db.Char(36)
+  stripeInvoiceId      String?       @unique @map("stripe_invoice_id") @db.VarChar(100)
+  stripeCustomerId     String?       @map("stripe_customer_id") @db.VarChar(100)
+  invoiceNumber        String?       @map("invoice_number") @db.VarChar(100)
+  hostedInvoiceUrl     String?       @map("hosted_invoice_url") @db.VarChar(1000)
+  invoicePdfUrl        String?       @map("invoice_pdf_url") @db.VarChar(1000)
+  currency             String        @default("usd") @db.VarChar(10)
+  subtotalAmount       Decimal?      @map("subtotal_amount") @db.Decimal(10, 2)
+  totalAmount          Decimal?      @map("total_amount") @db.Decimal(10, 2)
+  amountPaid           Decimal?      @map("amount_paid") @db.Decimal(10, 2)
+  status               InvoiceStatus @default(open)
+  billedAt             DateTime?     @map("billed_at")
+  paidAt               DateTime?     @map("paid_at")
+  metadataJson         Json?         @map("metadata_json")
+  createdAt            DateTime      @default(now()) @map("created_at")
+  updatedAt            DateTime      @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subscription Subscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@index([subscriptionId, createdAt])
+  @@index([status, createdAt])
+  @@map("billing_invoices")
+}
+
+model Coupon {
+  id            String       @id @default(uuid()) @db.Char(36)
+  code          String       @unique @db.VarChar(100)
+  discountType  DiscountType @map("discount_type")
+  discountValue Decimal      @map("discount_value") @db.Decimal(10, 2)
+  stripeCouponId String?     @map("stripe_coupon_id") @db.VarChar(100)
+  stripePromotionCodeId String? @map("stripe_promotion_code_id") @db.VarChar(100)
+  expiresAt     DateTime?    @map("expires_at")
+  maxUses       Int?         @map("max_uses")
+  usedCount     Int          @default(0) @map("used_count")
+  isActive      Boolean      @default(true) @map("is_active")
+  createdAt     DateTime     @default(now()) @map("created_at")
+  updatedAt     DateTime     @updatedAt @map("updated_at")
+
+  redemptions CouponRedemption[]
+
+  @@index([isActive, expiresAt])
+  @@map("coupons")
+}
+
+model CouponRedemption {
+  id         String   @id @default(uuid()) @db.Char(36)
+  couponId   String   @map("coupon_id") @db.Char(36)
+  userId     String   @map("user_id") @db.Char(36)
+  code       String   @db.VarChar(100)
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  coupon Coupon @relation(fields: [couponId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([couponId, createdAt])
+  @@index([userId, createdAt])
+  @@map("coupon_redemptions")
+}
+
+model Team {
+  id        String   @id @default(uuid()) @db.Char(36)
+  ownerId   String   @map("owner_id") @db.Char(36)
+  name      String   @db.VarChar(255)
+  planId    String   @map("plan_id") @db.Char(36)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  owner User @relation("TeamOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  plan  SubscriptionPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+  members TeamMember[]
+
+  @@index([ownerId])
+  @@index([planId])
+  @@map("teams")
+}
+
+model TeamMember {
+  id        String   @id @default(uuid()) @db.Char(36)
+  teamId    String   @map("team_id") @db.Char(36)
+  userId    String   @map("user_id") @db.Char(36)
+  role      TeamRole
+  createdAt DateTime @default(now()) @map("created_at")
+
+  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([teamId, userId])
+  @@index([userId])
+  @@map("team_members")
 }
 
 model Notification {
@@ -1317,6 +2046,65 @@ model AuditLog {
   @@index([entityType, entityId])
   @@index([createdAt])
   @@map("audit_logs")
+}
+
+model ActiveSession {
+  id                 String   @id @default(uuid()) @db.Char(36)
+  userId             String   @map("user_id") @db.Char(36)
+  refreshTokenHash   String?  @map("refresh_token_hash") @db.VarChar(255)
+  ipAddress          String?  @map("ip_address") @db.VarChar(45)
+  userAgent          String?  @map("user_agent") @db.VarChar(500)
+  lastActivityAt     DateTime @default(now()) @map("last_activity_at")
+  expiresAt          DateTime @map("expires_at")
+  revokedAt          DateTime? @map("revoked_at")
+  revokeReason       String?  @map("revoke_reason") @db.VarChar(255)
+  rotationCounter    Int      @default(0) @map("rotation_counter")
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, revokedAt])
+  @@index([expiresAt])
+  @@index([lastActivityAt])
+  @@map("active_sessions")
+}
+
+model IpReputation {
+  id                 String   @id @default(uuid()) @db.Char(36)
+  ipAddress          String   @unique @map("ip_address") @db.VarChar(45)
+  reputationScore    Int      @default(0) @map("reputation_score")
+  failedAttempts     Int      @default(0) @map("failed_attempts")
+  successfulAttempts Int      @default(0) @map("successful_attempts")
+  suspiciousEvents   Int      @default(0) @map("suspicious_events")
+  blockedUntil       DateTime? @map("blocked_until")
+  lastUserAgent      String?  @map("last_user_agent") @db.VarChar(500)
+  lastSeenAt         DateTime @default(now()) @map("last_seen_at")
+  metadataJson       Json?    @map("metadata_json")
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  @@index([blockedUntil])
+  @@index([reputationScore])
+  @@map("ip_reputations")
+}
+
+model BackupJob {
+  id          String       @id @default(uuid()) @db.Char(36)
+  type        BackupType
+  status      BackupStatus @default(pending)
+  startedAt   DateTime     @default(now()) @map("started_at")
+  completedAt DateTime?    @map("completed_at")
+  location    String?      @db.VarChar(1000)
+  size        BigInt?      @db.BigInt
+  checksum    String?      @db.VarChar(255)
+  metadataJson Json?       @map("metadata_json")
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @updatedAt @map("updated_at")
+
+  @@index([type, startedAt])
+  @@index([status, startedAt])
+  @@map("backup_jobs")
 }
 
 model VerificationLog {

@@ -15,13 +15,19 @@ import { Type } from 'class-transformer';
 import {
   EnglishTestType,
   ExperienceType,
-  FundingNeed,
   PreferredEmailTone,
   SkillCategory,
   StudentDegreeLevel,
   StudentDocumentType,
   StudentInterestedDegree,
 } from '@prisma/client';
+
+const FundingNeedValues = {
+  FULLY_FUNDED: 'FULLY_FUNDED',
+  PARTIAL_FUNDED: 'PARTIAL_FUNDED',
+  SELF_FUNDED: 'SELF_FUNDED',
+  ANY: 'ANY',
+} as const;
 
 class OnboardingBasicDto {
   @IsString() fullName!: string;
@@ -38,7 +44,7 @@ class OnboardingBasicDto {
   @IsOptional() @IsString() dateOfBirth?: string;
 }
 
-class OnboardingAcademicDto {
+class AdditionalAcademicDto {
   @IsEnum(StudentDegreeLevel) currentDegreeLevel!: StudentDegreeLevel;
   @IsString() currentUniversity!: string;
   @IsString() department!: string;
@@ -52,6 +58,25 @@ class OnboardingAcademicDto {
   @IsOptional() @IsString() supervisorName?: string;
 }
 
+class OnboardingAcademicDto {
+  @IsEnum(StudentDegreeLevel) currentDegreeLevel!: StudentDegreeLevel;
+  @IsString() currentUniversity!: string;
+  @IsString() department!: string;
+  @IsString() majorSubject!: string;
+  @IsOptional() @IsString() faculty?: string;
+  @IsOptional() @IsString() currentYear?: string;
+  @Type(() => Number) @IsInt() expectedGraduationYear!: number;
+  @IsOptional() @Type(() => Number) @IsNumber() cgpa?: number;
+  @IsOptional() @IsString() gradingScale?: string;
+  @IsOptional() @IsString() thesisTitle?: string;
+  @IsOptional() @IsString() supervisorName?: string;
+  @IsOptional()
+  @ValidateNested({ each: true })
+  @Type(() => AdditionalAcademicDto)
+  @IsArray()
+  additionalEducation?: AdditionalAcademicDto[];
+}
+
 class OnboardingResearchDto {
   @IsString() primaryResearchArea!: string;
   @IsOptional() @IsArray() secondaryResearchAreas?: string[];
@@ -61,7 +86,7 @@ class OnboardingResearchDto {
   @IsArray() preferredStudyCountries!: string[];
   @IsOptional() @IsArray() preferredUniversities?: string[];
   @IsOptional() @IsString() preferredIntake?: string;
-  @IsEnum(FundingNeed) fundingNeed!: FundingNeed;
+  @IsArray() @IsEnum(FundingNeedValues, { each: true }) fundingNeed!: string[];
 }
 
 class SkillItemDto {
@@ -92,6 +117,8 @@ class PublicationItemDto {
   @IsOptional() @Type(() => Number) @IsInt() year?: number;
   @IsOptional() @IsString() doi?: string;
   @IsOptional() @IsUrl() url?: string;
+  @IsOptional() @IsString() publishedAt?: string;
+  @IsOptional() @IsString() description?: string;
 }
 
 class OnboardingSkillsDto {
@@ -159,6 +186,8 @@ export class UpdateStudentProfileDto {
   @IsOptional() @ValidateNested() @Type(() => OnboardingResearchDto) research?: OnboardingResearchDto;
   @IsOptional() @ValidateNested() @Type(() => OnboardingSkillsDto) skills?: OnboardingSkillsDto;
   @IsOptional() @ValidateNested() @Type(() => PreferenceDto) preferences?: PreferenceDto;
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(5) onboardingStep?: number;
+  @IsOptional() @IsBoolean() onboardingCompleted?: boolean;
 }
 
 export class UploadStudentDocumentDto {

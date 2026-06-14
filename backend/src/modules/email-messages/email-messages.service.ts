@@ -6,6 +6,9 @@ import { EmailQueueService } from '../../queues/email-queue.service';
 import { MailSettingsService } from '../email-accounts/mail-settings.service';
 import * as nodemailer from 'nodemailer';
 import { v4 as uuidv4 } from 'uuid';
+import { UsageMeteringService } from '../billing/usage-metering.service';
+import { AuditLogService } from '../security/audit-log.service';
+import { emailSendCounter } from '../observability/metrics.registry';
 
 @Injectable()
 export class EmailMessagesService {
@@ -17,6 +20,8 @@ export class EmailMessagesService {
     private readonly config: ConfigService,
     private readonly emailQueue: EmailQueueService,
     private readonly mailSettings: MailSettingsService,
+    private readonly usage: UsageMeteringService,
+    private readonly audit: AuditLogService,
   ) {}
 
   async createMessage(threadId: string, userId: string, data: any) {
@@ -38,8 +43,11 @@ export class EmailMessagesService {
         ccEmails: data.ccEmails,
         bccEmails: data.bccEmails,
         subject: data.subject || thread.subject,
+        body: data.body || data.bodyText,
         bodyHtml: data.bodyHtml,
         bodyText: data.bodyText,
+        provider: data.provider || unifiedAccount?.provider || thread.accountType,
+        trackingToken: data.trackingToken || uuidv4(),
         messageIdHeader: messageId,
         inReplyTo: data.inReplyTo,
         status: data.scheduledAt ? 'scheduled' : 'queued',
@@ -69,6 +77,7 @@ export class EmailMessagesService {
     const t = thread || message.thread;
 
     try {
+      await this.usage.assertWithinLimit(message.userId, 'email_send');
       await this.prisma.emailMessage.update({ where: { id: messageId }, data: { status: 'sending' } });
 
       if (t.accountType === 'system' || t.accountType === 'custom') {
@@ -108,13 +117,25 @@ export class EmailMessagesService {
           where: { id: t.id },
           data: {
             status: 'sent',
+            currentStage: t.currentStage === 'saved' || t.currentStage === 'planned' ? 'contacted' : t.currentStage,
             lastMessageAt: new Date(),
             messageCount: { increment: 1 },
+            sentCount: { increment: 1 },
           },
         }),
       ]);
+      await this.usage.recordUsage(message.userId, 'email_send');
+      emailSendCounter.inc({ status: 'sent' });
+      await this.audit.logUserAction({
+        userId: message.userId,
+        action: 'email.send',
+        entityType: 'email_message',
+        entityId: messageId,
+        metadata: { threadId: t.id, accountType: t.accountType },
+      });
     } catch (err: any) {
       this.logger.error(`Failed to send message ${messageId}: ${err.message}`);
+      emailSendCounter.inc({ status: 'failed' });
       await this.prisma.emailMessage.update({
         where: { id: messageId },
         data: { status: 'failed', errorMessage: err.message },
@@ -271,6 +292,10 @@ export class EmailMessagesService {
       }),
       this.prisma.emailTracking.create({
         data: { messageId, eventType: 'open' },
+      }),
+      this.prisma.emailThread.update({
+        where: { id: message.threadId },
+        data: { openCount: { increment: 1 } },
       }),
     ]);
   }

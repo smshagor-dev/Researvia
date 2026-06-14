@@ -1,11 +1,18 @@
 import {
-  Controller, Get, Post, Patch, Delete, Body, Param,
-  Query, UseGuards, HttpCode, HttpStatus,
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Query,
+  UseGuards,
 } from '@nestjs/common';
-import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { ScholarshipsService } from './scholarships.service';
-import { JwtAuthGuard, OptionalJwtGuard, RolesGuard } from '../../common/guards/jwt-auth.guard';
-import { CurrentUser, Roles } from '../../common/decorators';
+import { JwtAuthGuard, OptionalJwtGuard } from '../../common/guards/jwt-auth.guard';
+import { CurrentUser } from '../../common/decorators';
 
 @ApiTags('Scholarships')
 @Controller('scholarships')
@@ -14,8 +21,8 @@ export class ScholarshipsController {
 
   @Get()
   @UseGuards(OptionalJwtGuard)
-  async findAll(@Query() filters: any) {
-    return this.scholarshipsService.findAll(filters);
+  async findAll(@Query() filters: any, @CurrentUser() user: any) {
+    return this.scholarshipsService.findAll(filters, user?.id);
   }
 
   @Get('saved')
@@ -31,8 +38,8 @@ export class ScholarshipsController {
 
   @Get(':id')
   @UseGuards(OptionalJwtGuard)
-  async findOne(@Param('id') id: string) {
-    return this.scholarshipsService.findOne(id);
+  async findOne(@Param('id') id: string, @CurrentUser() user: any) {
+    return this.scholarshipsService.findOne(id, user?.id);
   }
 
   @Post(':id/save')
@@ -62,29 +69,5 @@ export class ScholarshipsController {
     @Body() body: any,
   ) {
     return this.scholarshipsService.updateSavedStatus(userId, id, body);
-  }
-
-  @Post()
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('admin', 'super_admin')
-  @ApiBearerAuth()
-  async create(@Body() body: any) {
-    return this.scholarshipsService.create(body);
-  }
-
-  @Patch(':id')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('admin', 'super_admin')
-  @ApiBearerAuth()
-  async update(@Param('id') id: string, @Body() body: any) {
-    return this.scholarshipsService.update(id, body);
-  }
-
-  @Delete(':id')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('admin', 'super_admin')
-  @ApiBearerAuth()
-  async delete(@Param('id') id: string) {
-    return this.scholarshipsService.delete(id);
   }
 }

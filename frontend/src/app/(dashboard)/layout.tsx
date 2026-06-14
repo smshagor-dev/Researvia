@@ -9,7 +9,7 @@ import { getToken } from '@/lib/api/client';
 import {
   GraduationCap, LayoutDashboard, Users, BookOpen, Mail,
   Bookmark, Star, Settings, Bell, LogOut, ChevronRight,
-  Coins, Menu, X, Search, AtSign, FileText,
+  Coins, Menu, X, Search, AtSign, FileText, BriefcaseBusiness, KanbanSquare,
 } from 'lucide-react';
 import { cn, formatCredits } from '@/lib/utils';
 import { useLogout } from '@/lib/hooks';
@@ -17,9 +17,11 @@ import { useState } from 'react';
 import { ThemeToggle } from '@/components/theme/ThemeToggle';
 
 const navItems = [
-  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { href: '/dashboard/student', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/professors', label: 'Professors', icon: Users },
   { href: '/scholarships', label: 'Scholarships', icon: BookOpen },
+  { href: '/opportunities', label: 'Opportunities', icon: BriefcaseBusiness },
+  { href: '/applications', label: 'Applications', icon: KanbanSquare },
   { href: '/inbox', label: 'Inbox', icon: Mail },
   { href: '/saved/professors', label: 'Saved Professors', icon: Star },
   { href: '/saved/scholarships', label: 'Saved Scholarships', icon: Bookmark },
@@ -27,8 +29,10 @@ const navItems = [
 
 const settingsItems = [
   { href: '/settings/profile', label: 'Profile', icon: Settings },
+  { href: '/settings/academic-profile', label: 'Academic Profile', icon: GraduationCap },
   { href: '/settings/documents', label: 'Documents', icon: FileText },
   { href: '/settings/email-accounts', label: 'Email Accounts', icon: AtSign },
+  { href: '/settings/security', label: 'Security', icon: Bell },
 ];
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -49,12 +53,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   const unreadCount = (unreadData as any)?.count || 0;
   const creditBalance = (creditsData as any)?.balance ?? user?.credits?.balance ?? 0;
+  const currentUser = (meData as any) || user;
 
   const SidebarContent = () => (
     <div className="flex flex-col h-full">
       {/* Logo */}
       <div className="border-b border-gray-100 px-6 py-5 dark:border-slate-800">
-        <Link href="/dashboard" className="flex items-center gap-2.5">
+        <Link href="/dashboard/student" className="flex items-center gap-2.5">
           <div className="w-8 h-8 rounded-lg gradient-primary flex items-center justify-center flex-shrink-0">
             <GraduationCap className="w-5 h-5 text-white" />
           </div>
@@ -120,12 +125,17 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
         {/* User info */}
         <div className="flex items-center gap-3 px-3 py-2.5 mt-2">
-          <div className="w-8 h-8 rounded-full gradient-primary flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
-            {user?.fullName?.[0]?.toUpperCase() || 'U'}
+          <div className="flex h-8 w-8 items-center justify-center overflow-hidden rounded-full gradient-primary text-white text-xs font-bold flex-shrink-0">
+            {currentUser?.avatarUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={toImageSrc(currentUser.avatarUrl)} alt={currentUser.fullName || 'User avatar'} className="h-full w-full object-cover" />
+            ) : (
+              currentUser?.fullName?.[0]?.toUpperCase() || 'U'
+            )}
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium text-gray-900 truncate dark:text-slate-100">{user?.fullName}</p>
-            <p className="text-xs text-gray-400 truncate dark:text-slate-500">{user?.email}</p>
+            <p className="text-sm font-medium text-gray-900 truncate dark:text-slate-100">{currentUser?.fullName}</p>
+            <p className="text-xs text-gray-400 truncate dark:text-slate-500">{currentUser?.email}</p>
           </div>
         </div>
       </div>
@@ -187,4 +197,16 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       </div>
     </div>
   );
+}
+
+function toImageSrc(value: string) {
+  if (!value) return value;
+  if (value.startsWith('blob:') || value.startsWith('data:')) return value;
+  const [rawBase, rawQuery] = value.split('?');
+  const normalizedBase = rawBase
+    .split('/')
+    .map((part, index) => (index < 3 ? part : encodeURIComponent(decodeURIComponent(part))))
+    .join('/');
+  const cacheBuster = `cb=${Date.now()}`;
+  return rawQuery ? `${normalizedBase}?${rawQuery}&${cacheBuster}` : `${normalizedBase}?${cacheBuster}`;
 }

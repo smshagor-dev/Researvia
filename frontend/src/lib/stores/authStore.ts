@@ -7,6 +7,10 @@ interface User {
   fullName: string;
   role: string;
   avatarUrl?: string;
+  hasStudentProfile?: boolean;
+  studentOnboardingCompleted?: boolean;
+  profileCompleteness?: number;
+  systemMailboxEmail?: string | null;
   activeSubscription?: { plan: { name: string; slug: string; [key: string]: any } } | null;
   credits?: { balance: number };
 }
@@ -15,8 +19,10 @@ interface AuthStore {
   user: User | null;
   isAuthenticated: boolean;
   isLoading: boolean;
+  hasHydrated: boolean;
   setUser: (user: User | null) => void;
   setLoading: (loading: boolean) => void;
+  setHasHydrated: (hasHydrated: boolean) => void;
   logout: () => void;
   updateCredits: (balance: number) => void;
 }
@@ -27,8 +33,10 @@ export const useAuthStore = create<AuthStore>()(
       user: null,
       isAuthenticated: false,
       isLoading: true,
+      hasHydrated: false,
       setUser: (user) => set({ user, isAuthenticated: !!user, isLoading: false }),
       setLoading: (isLoading) => set({ isLoading }),
+      setHasHydrated: (hasHydrated) => set({ hasHydrated }),
       logout: () => {
         if (typeof window !== 'undefined') {
           localStorage.removeItem('access_token');
@@ -44,6 +52,10 @@ export const useAuthStore = create<AuthStore>()(
     {
       name: 'profcrm-auth',
       partialize: (state) => ({ user: state.user, isAuthenticated: state.isAuthenticated }),
+      skipHydration: true,
+      onRehydrateStorage: () => (state) => {
+        state?.setHasHydrated(true);
+      },
     },
   ),
 );

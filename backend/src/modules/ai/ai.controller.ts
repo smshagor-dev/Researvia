@@ -7,6 +7,7 @@ import { AiService } from './ai.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../../common/decorators';
 import { CreditsService } from '../credits/credits.service';
+import { UsageMeteringService } from '../billing/usage-metering.service';
 
 @ApiTags('AI')
 @ApiBearerAuth()
@@ -16,6 +17,7 @@ export class AiController {
   constructor(
     private readonly aiService: AiService,
     private readonly creditsService: CreditsService,
+    private readonly usage: UsageMeteringService,
   ) {}
 
   @Post('generate-outreach')
@@ -24,7 +26,9 @@ export class AiController {
     @Body() body: { professorId: string; tone?: string; highlights?: string[]; wordLimit?: number },
     @Res() res: Response,
   ) {
+    await this.usage.assertWithinLimit(userId, 'ai_generation');
     await this.creditsService.deduct(userId, 10, 'ai_generation', body.professorId, 'professors', 'AI outreach email generation');
+    await this.usage.recordUsage(userId, 'ai_generation');
     return this.aiService.generateOutreach(userId, body.professorId, body, res);
   }
 
@@ -34,7 +38,9 @@ export class AiController {
     @Body() body: { threadId: string; tone?: string },
     @Res() res: Response,
   ) {
-    await this.creditsService.deduct(userId, 5, 'ai_generation', body.threadId, 'email_threads', 'AI follow-up generation');
+    await this.usage.assertWithinLimit(userId, 'ai_generation');
+    await this.creditsService.deduct(userId, 10, 'ai_generation', body.threadId, 'email_threads', 'AI follow-up generation');
+    await this.usage.recordUsage(userId, 'ai_generation');
     return this.aiService.generateFollowup(userId, body.threadId, body, res);
   }
 

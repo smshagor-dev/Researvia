@@ -8,6 +8,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useLogin } from '@/lib/hooks';
 import { Eye, EyeOff, Loader2, GraduationCap } from 'lucide-react';
+import { getPostAuthRedirect } from '@/lib/auth/redirect';
 
 const schema = z.object({
   email: z.string().email('Invalid email'),
@@ -34,7 +35,7 @@ export default function LoginPage() {
         setNeeds2FA(true);
         return;
       }
-      router.push('/dashboard');
+      router.push(getPostAuthRedirect(result.user));
     } catch (e: any) {
       const msg = e.response?.data?.error?.message || 'Login failed';
       setError(msg);
@@ -53,7 +54,7 @@ export default function LoginPage() {
             <span className="text-2xl font-bold gradient-text">ProfCRM</span>
           </div>
           <h1 className="text-2xl font-bold text-gray-900">Welcome back</h1>
-          <p className="text-gray-500 mt-1">Sign in to your account</p>
+          <p className="text-gray-500 mt-1">Sign in once and we&apos;ll open the right dashboard for your role.</p>
         </div>
 
         {/* Card */}
@@ -71,6 +72,7 @@ export default function LoginPage() {
                 {...register('email')}
                 type="email"
                 placeholder="you@example.com"
+                autoComplete="username"
                 className="auth-input"
               />
               {errors.email && <p className="mt-1 text-xs text-red-500">{errors.email.message as string}</p>}
@@ -83,6 +85,7 @@ export default function LoginPage() {
                   {...register('password')}
                   type={showPassword ? 'text' : 'password'}
                   placeholder="Password"
+                  autoComplete="current-password"
                   className="auth-input pr-10"
                 />
                 <button
@@ -118,7 +121,6 @@ export default function LoginPage() {
 
             <button
               type="submit"
-              disabled={login.isPending}
               className="gradient-primary flex w-full items-center justify-center gap-2 rounded-lg px-4 py-2.5 font-semibold text-white shadow-lg shadow-indigo-600/20 transition hover:-translate-y-0.5 hover:opacity-95 disabled:translate-y-0 disabled:opacity-60"
             >
               {login.isPending && <Loader2 className="w-4 h-4 animate-spin" />}

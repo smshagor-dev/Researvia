@@ -5,11 +5,13 @@ import { EmailAccountsModule } from '../email-accounts/email-accounts.module';
 import { QueuesModule } from '../../queues/queues.module';
 import { JwtModule } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
+import { BillingModule } from '../billing/billing.module';
 
 @Module({
   imports: [
     EmailAccountsModule,
     QueuesModule,
+    BillingModule,
     JwtModule.registerAsync({ inject: [ConfigService], useFactory: (c: ConfigService) => ({ secret: c.get('JWT_SECRET', 'dev-secret') }) }),
   ],
   controllers: [EmailMessagesController, TrackingController],

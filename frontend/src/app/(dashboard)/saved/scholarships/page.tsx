@@ -7,14 +7,21 @@ import { cn, formatDeadline, FUNDING_TYPE_LABELS, DEGREE_LEVEL_LABELS } from '@/
 import { useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 
-const APP_STATUSES = ['saved','applied','accepted','rejected'];
-const STATUS_COLORS: Record<string,string> = { saved:'bg-gray-100 text-gray-600', applied:'bg-blue-100 text-blue-700', accepted:'bg-green-100 text-green-700', rejected:'bg-red-100 text-red-600' };
+const APP_STATUSES = ['saved', 'applied', 'interview', 'accepted', 'rejected'];
+const STATUS_COLORS: Record<string,string> = {
+  saved:'bg-gray-100 text-gray-600',
+  applied:'bg-blue-100 text-blue-700',
+  interview:'bg-amber-100 text-amber-700',
+  accepted:'bg-green-100 text-green-700',
+  rejected:'bg-red-100 text-red-600',
+};
 
 export default function SavedScholarshipsPage() {
   const qc = useQueryClient();
   const { data, isLoading } = useSavedScholarships();
   const items = (data as any)?.data || [];
   const [updatingId, setUpdatingId] = useState<string|null>(null);
+  const [sortBy, setSortBy] = useState<'savedAt' | 'matchScore'>('savedAt');
 
   const handleStatusChange = async (schId: string, status: string) => {
     setUpdatingId(schId);
@@ -31,9 +38,15 @@ export default function SavedScholarshipsPage() {
   };
 
   const stats = APP_STATUSES.reduce((acc, s) => ({ ...acc, [s]: items.filter((i:any) => i.applicationStatus === s).length }), {} as Record<string,number>);
+  const sortedItems = [...items].sort((a: any, b: any) => {
+    if (sortBy === 'matchScore') {
+      return (b.scholarship?.matchScore?.score || 0) - (a.scholarship?.matchScore?.score || 0);
+    }
+    return new Date(b.savedAt || b.createdAt).getTime() - new Date(a.savedAt || a.createdAt).getTime();
+  });
 
   return (
-    <div className="p-6 max-w-5xl mx-auto">
+    <div className="mx-auto w-full max-w-[1680px] px-6 py-6 xl:px-8">
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
           <Bookmark className="w-6 h-6 text-blue-500" /> Saved Scholarships
@@ -41,13 +54,20 @@ export default function SavedScholarshipsPage() {
         <p className="text-gray-500 text-sm mt-1">Track your scholarship applications</p>
       </div>
 
-      <div className="grid grid-cols-4 gap-3 mb-6">
+      <div className="grid gap-3 mb-6 sm:grid-cols-2 lg:grid-cols-5">
         {APP_STATUSES.map(s => (
           <div key={s} className={cn('rounded-xl p-3 text-center', STATUS_COLORS[s])}>
             <p className="text-2xl font-bold">{stats[s] || 0}</p>
             <p className="text-xs font-medium capitalize mt-0.5">{s}</p>
           </div>
         ))}
+      </div>
+
+      <div className="mb-4 flex justify-end">
+        <select value={sortBy} onChange={(e) => setSortBy(e.target.value as any)} className="rounded-xl border border-gray-200 px-3 py-2 text-sm">
+          <option value="savedAt">Sort by Saved</option>
+          <option value="matchScore">Sort by Match Score</option>
+        </select>
       </div>
 
       {isLoading ? (
@@ -62,7 +82,7 @@ export default function SavedScholarshipsPage() {
         </div>
       ) : (
         <div className="space-y-3">
-          {items.map((item: any) => {
+          {sortedItems.map((item: any) => {
             const s = item.scholarship;
             const deadline = formatDeadline(s.deadline);
             return (
@@ -74,6 +94,7 @@ export default function SavedScholarshipsPage() {
                   <Link href={`/scholarships/${s.id}`} className="font-semibold text-sm text-gray-900 hover:text-blue-600 transition truncate block">{s.title}</Link>
                   <div className="flex flex-wrap gap-2 mt-1">
                     {s.country && <span className="text-xs text-gray-400">{s.country.flagEmoji} {s.country.name}</span>}
+                    {s.matchScore?.score != null && <span className="text-xs font-semibold text-emerald-600">Match {s.matchScore.score}/100</span>}
                     <span className="text-xs text-gray-400">{FUNDING_TYPE_LABELS[s.fundingType] || s.fundingType}</span>
                     <span className={cn('text-xs font-medium', deadline.color)}>{deadline.text}</span>
                   </div>

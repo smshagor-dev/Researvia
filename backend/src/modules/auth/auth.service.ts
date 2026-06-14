@@ -9,6 +9,8 @@ import { PrismaService } from '../../shared/prisma/prisma.service';
 import { RedisService } from '../../shared/redis/redis.service';
 import { EncryptionService } from '../../shared/encryption/encryption.service';
 import { EmailAccountsService } from '../email-accounts/email-accounts.service';
+import { StudentProfileService } from '../student-profile/student-profile.service';
+import { SecurityService } from '../security/security.service';
 import * as bcrypt from 'bcryptjs';
 import { authenticator } from 'otplib';
 import * as QRCode from 'qrcode';
@@ -29,9 +31,11 @@ export class AuthService {
     private readonly redis: RedisService,
     private readonly encryption: EncryptionService,
     private readonly emailAccounts: EmailAccountsService,
+    private readonly studentProfiles: StudentProfileService,
+    private readonly security: SecurityService,
   ) {}
 
-  async register(dto: RegisterDto) {
+  async register(dto: RegisterDto, ip?: string, userAgent?: string) {
     const existing = await this.prisma.user.findFirst({ where: { email: dto.email } });
     if (existing) throw new ConflictException({ code: 'EMAIL_TAKEN', message: 'Email already in use' });
 
@@ -60,7 +64,7 @@ export class AuthService {
       },
     });
 
-    await this.emailAccounts.provisionSystemMailboxForUser(user);
+    await this.ensureStudentAccessBootstrap(user);
 
     // Store email verification token
     const verifyToken = this.encryption.randomToken(32);
@@ -68,25 +72,31 @@ export class AuthService {
 
     // TODO: send verification email via queue
 
+    const tokens = await this.generateTokenPair(user, false, { ip, userAgent });
     return {
+      ...tokens,
       userId: user.id,
-      email: user.email,
-      fullName: user.fullName,
       emailVerificationSent: true,
+      nextPath: '/onboarding/student',
     };
   }
 
-  async login(dto: LoginDto, ip?: string) {
+  async login(dto: LoginDto, ip?: string, userAgent?: string) {
+    await this.security.assertIpAllowed(ip);
     const user = await this.prisma.user.findFirst({
       where: { email: dto.email, deletedAt: null },
     });
 
     if (!user || !user.passwordHash) {
+      await this.security.recordFailedLogin(dto.email, ip, userAgent);
       throw new UnauthorizedException({ code: 'INVALID_CREDENTIALS', message: 'Invalid email or password' });
     }
 
+    await this.security.assertUserUnlocked(user);
+
     const valid = await bcrypt.compare(dto.password, user.passwordHash);
     if (!valid) {
+      await this.security.recordFailedLogin(dto.email, ip, userAgent, user.id);
       throw new UnauthorizedException({ code: 'INVALID_CREDENTIALS', message: 'Invalid email or password' });
     }
 
@@ -110,13 +120,8 @@ export class AuthService {
       }
     }
 
-    // Update last login
-    await this.prisma.user.update({
-      where: { id: user.id },
-      data: { lastLoginAt: new Date(), lastLoginIp: ip },
-    });
-
-    return this.generateTokenPair(user, dto.rememberMe);
+    await this.security.recordSuccessfulLogin(user.id, ip, userAgent);
+    return this.generateTokenPair(user, dto.rememberMe, { ip, userAgent });
   }
 
   async verifyEmail(token: string) {
@@ -131,7 +136,7 @@ export class AuthService {
     return { verified: true };
   }
 
-  async refresh(refreshToken: string) {
+  async refresh(refreshToken: string, ip?: string, userAgent?: string) {
     let payload: any;
     try {
       payload = this.jwt.verify(refreshToken, { secret: this.config.get('JWT_SECRET') });
@@ -151,21 +156,31 @@ export class AuthService {
 
     const user = await this.prisma.user.findFirst({ where: { id: payload.sub } });
     if (!user) throw new UnauthorizedException();
+    if (payload.tokenVersion !== user.tokenVersion) {
+      throw new UnauthorizedException({ code: 'INVALID_REFRESH_TOKEN', message: 'Refresh token version expired' });
+    }
+    await this.security.assertIpAllowed(ip);
+    await this.security.validateSession(user.id, payload.sessionId);
 
     // Revoke old refresh token
     await this.redis.del(`refresh:${payload.sub}:${payload.sessionId}`);
-
-    return this.generateTokenPair(user, payload.rememberMe);
+    return this.generateTokenPair(user, payload.rememberMe, {
+      ip,
+      userAgent,
+      existingSessionId: payload.sessionId,
+    });
   }
 
   async logout(userId: string, sessionId: string) {
-    await this.redis.del(`refresh:${userId}:${sessionId}`);
-    return { success: true };
+    return this.security.revokeSession(userId, sessionId, 'logout');
   }
 
   async logoutAll(userId: string) {
-    await this.redis.delPattern(`refresh:${userId}:*`);
-    return { success: true };
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { tokenVersion: { increment: 1 } },
+    });
+    return this.security.revokeAllSessions(userId, 'logout_all');
   }
 
   async forgotPassword(dto: ForgotPasswordDto) {
@@ -188,9 +203,16 @@ export class AuthService {
     if (!userId) throw new BadRequestException({ code: 'INVALID_TOKEN', message: 'Invalid or expired reset token' });
 
     const passwordHash = await bcrypt.hash(dto.newPassword, 12);
-    await this.prisma.user.update({ where: { id: userId }, data: { passwordHash } });
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        passwordHash,
+        passwordChangedAt: new Date(),
+        tokenVersion: { increment: 1 },
+      },
+    });
     await this.redis.del(`reset:${tokenHash}`);
-    await this.redis.delPattern(`refresh:${userId}:*`);
+    await this.security.revokeAllSessions(userId, 'password_reset');
     return { success: true };
   }
 
@@ -202,8 +224,15 @@ export class AuthService {
     if (!valid) throw new BadRequestException({ code: 'WRONG_PASSWORD', message: 'Current password is incorrect' });
 
     const passwordHash = await bcrypt.hash(dto.newPassword, 12);
-    await this.prisma.user.update({ where: { id: userId }, data: { passwordHash } });
-    await this.redis.delPattern(`refresh:${userId}:*`);
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        passwordHash,
+        passwordChangedAt: new Date(),
+        tokenVersion: { increment: 1 },
+      },
+    });
+    await this.security.revokeAllSessions(userId, 'password_change');
     return { success: true };
   }
 
@@ -296,7 +325,7 @@ export class AuthService {
         },
       });
 
-      await this.emailAccounts.provisionSystemMailboxForUser(user);
+      await this.ensureStudentAccessBootstrap(user);
     }
 
     // Upsert OAuth account
@@ -318,38 +347,81 @@ export class AuthService {
       },
     });
 
-    return this.generateTokenPair(user);
+    return this.generateTokenPair(user, false);
   }
 
-  private async generateTokenPair(user: any, rememberMe = false) {
-    const sessionId = uuidv4();
+  private async generateTokenPair(
+    user: any,
+    rememberMe = false,
+    context?: { ip?: string | null; userAgent?: string | null; existingSessionId?: string },
+  ) {
+    const sessionUser = await this.buildSessionUser(user);
+    const sessionId = context?.existingSessionId || uuidv4();
     const refreshExpiresIn = rememberMe ? '365d' : this.config.get('JWT_REFRESH_EXPIRES', '30d');
     const refreshTtl = rememberMe ? 365 * 24 * 3600 : 30 * 24 * 3600;
+    const tokenVersion = user.tokenVersion || 0;
 
     const accessToken = this.jwt.sign(
-      { sub: user.id, email: user.email, role: user.role, sessionId },
+      { sub: user.id, email: user.email, role: user.role, sessionId, tokenVersion },
       { secret: this.config.get('JWT_SECRET'), expiresIn: this.config.get('JWT_ACCESS_EXPIRES', '15m') },
     );
 
     const refreshToken = this.jwt.sign(
-      { sub: user.id, sessionId, type: 'refresh', rememberMe },
+      { sub: user.id, sessionId, type: 'refresh', rememberMe, tokenVersion },
       { secret: this.config.get('JWT_SECRET'), expiresIn: refreshExpiresIn },
     );
 
     // Store refresh token hash in Redis
-    await this.redis.set(`refresh:${user.id}:${sessionId}`, this.encryption.hash(refreshToken), refreshTtl);
+    const refreshTokenHash = this.encryption.hash(refreshToken);
+    await this.redis.set(`refresh:${user.id}:${sessionId}`, refreshTokenHash, refreshTtl);
+    const expiresAt = new Date(Date.now() + refreshTtl * 1000);
+
+    if (context?.existingSessionId) {
+      await this.security.rotateSession(user.id, sessionId, refreshTokenHash, expiresAt);
+    } else {
+      await this.security.createSession({
+        userId: user.id,
+        sessionId,
+        refreshTokenHash,
+        expiresAt,
+        ip: context?.ip,
+        userAgent: context?.userAgent,
+      });
+    }
 
     return {
       accessToken,
       refreshToken,
       expiresIn: 900,
-      user: {
-        id: user.id,
-        email: user.email,
-        fullName: user.fullName,
-        role: user.role,
-        avatarUrl: user.avatarUrl,
-      },
+      user: sessionUser,
+    };
+  }
+
+  private async ensureStudentAccessBootstrap(user: any) {
+    const normalizedRole = String(user.role || '').toLowerCase();
+    if (!['user', 'student'].includes(normalizedRole)) {
+      return;
+    }
+
+    try {
+      await this.emailAccounts.provisionSystemMailboxForUser(user);
+    } catch (error: any) {
+      this.logger.warn(`System mailbox bootstrap failed for ${user.id}: ${error.message}`);
+    }
+    await this.studentProfiles.ensureStudentProfileForUser(user);
+  }
+
+  private async buildSessionUser(user: any) {
+    await this.ensureStudentAccessBootstrap(user);
+    const studentMeta = await this.studentProfiles.getStudentSessionMeta(user.id);
+
+    return {
+      id: user.id,
+      email: user.email,
+      fullName: user.fullName,
+      role: user.role,
+      avatarUrl: user.avatarUrl,
+      ...studentMeta,
     };
   }
 }
