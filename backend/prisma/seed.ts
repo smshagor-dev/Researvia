@@ -1,3 +1,4 @@
+import { createHash } from 'crypto';
 import { Country, PrismaClient } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 
@@ -7,6 +8,10 @@ const POPULAR_DESTINATION_CODES = new Set([
   'US', 'GB', 'DE', 'CA', 'AU', 'SE', 'NL', 'CH', 'FR', 'IT', 'ES', 'JP',
   'KR', 'SG', 'CN', 'NZ', 'IE', 'BE', 'DK', 'FI', 'NO', 'AT',
 ]);
+
+function hashEmail(email: string) {
+  return createHash('sha256').update(email.trim().toLowerCase()).digest('hex');
+}
 
 type CountriesNowCountry = {
   name?: string;
@@ -252,12 +257,33 @@ async function main() {
   const countries = await seedCountriesFromApi();
   const countryByCode = new Map<string, Country>(countries.map((country) => [country.isoAlpha2, country]));
 
+  await prisma.university.updateMany({
+    where: { rorId: 'https://ror.org/03vek6s52', name: 'Stanford University' },
+    data: { rorId: 'https://ror.org/00f54p054', openalexId: 'https://openalex.org/I97018004' },
+  });
+
+  await prisma.university.updateMany({
+    where: { rorId: 'https://ror.org/052gg0110', name: 'University of Cambridge' },
+    data: { rorId: 'https://ror.org/013meh722', openalexId: 'https://openalex.org/I241749' },
+  });
+
   const universities = await Promise.all([
     prisma.university.upsert({
       where: { rorId: 'https://ror.org/042nb2s44' },
-      update: {},
+      update: {
+        openalexId: 'https://openalex.org/I63966007',
+        name: 'Massachusetts Institute of Technology',
+        countryId: countryByCode.get('US')!.id,
+        city: 'Cambridge',
+        websiteUrl: 'https://www.mit.edu',
+        qsRanking: 1,
+        type: 'research',
+        emailDomains: ['mit.edu'],
+        status: 'active',
+      },
       create: {
         rorId: 'https://ror.org/042nb2s44',
+        openalexId: 'https://openalex.org/I63966007',
         name: 'Massachusetts Institute of Technology',
         countryId: countryByCode.get('US')!.id,
         city: 'Cambridge',
@@ -269,10 +295,21 @@ async function main() {
       },
     }),
     prisma.university.upsert({
-      where: { rorId: 'https://ror.org/03vek6s52' },
-      update: {},
+      where: { rorId: 'https://ror.org/00f54p054' },
+      update: {
+        openalexId: 'https://openalex.org/I97018004',
+        name: 'Stanford University',
+        countryId: countryByCode.get('US')!.id,
+        city: 'Stanford',
+        websiteUrl: 'https://www.stanford.edu',
+        qsRanking: 3,
+        type: 'research',
+        emailDomains: ['stanford.edu'],
+        status: 'active',
+      },
       create: {
-        rorId: 'https://ror.org/03vek6s52',
+        rorId: 'https://ror.org/00f54p054',
+        openalexId: 'https://openalex.org/I97018004',
         name: 'Stanford University',
         countryId: countryByCode.get('US')!.id,
         city: 'Stanford',
@@ -284,10 +321,21 @@ async function main() {
       },
     }),
     prisma.university.upsert({
-      where: { rorId: 'https://ror.org/052gg0110' },
-      update: {},
+      where: { rorId: 'https://ror.org/013meh722' },
+      update: {
+        openalexId: 'https://openalex.org/I241749',
+        name: 'University of Cambridge',
+        countryId: countryByCode.get('GB')!.id,
+        city: 'Cambridge',
+        websiteUrl: 'https://www.cam.ac.uk',
+        qsRanking: 2,
+        type: 'research',
+        emailDomains: ['cam.ac.uk'],
+        status: 'active',
+      },
       create: {
-        rorId: 'https://ror.org/052gg0110',
+        rorId: 'https://ror.org/013meh722',
+        openalexId: 'https://openalex.org/I241749',
         name: 'University of Cambridge',
         countryId: countryByCode.get('GB')!.id,
         city: 'Cambridge',
@@ -326,7 +374,26 @@ async function main() {
 
   const prof1 = await prisma.professor.upsert({
     where: { openalexId: 'A5023888391' },
-    update: {},
+    update: {
+      universityId: universities[0].id,
+      departmentId: depts[0].id,
+      fullName: 'Dr. Sarah Chen',
+      firstName: 'Sarah',
+      lastName: 'Chen',
+      title: 'Dr.',
+      position: 'associate_professor',
+      bio: 'Research in machine learning, autonomous systems, and computer vision. PI of the Intelligent Systems Lab.',
+      hIndex: 42,
+      citationsCount: 8500,
+      publicationsCount: 87,
+      acceptingStudents: 'yes',
+      fundingStatus: 'funded',
+      lastPublicationYear: 2024,
+      status: 'active',
+      verificationStatus: 'verified',
+      isPublic: true,
+      dataSource: 'manual',
+    },
     create: {
       universityId: universities[0].id,
       departmentId: depts[0].id,
@@ -344,6 +411,8 @@ async function main() {
       fundingStatus: 'funded',
       lastPublicationYear: 2024,
       status: 'active',
+      verificationStatus: 'verified',
+      isPublic: true,
       dataSource: 'manual',
     },
   });
@@ -354,18 +423,21 @@ async function main() {
     create: { professorId: prof1.id, researchAreaId: researchAreas[1].id, score: 0.95, isPrimary: true },
   });
 
+  const professorEmail = 'schen@mit.edu';
+
   await prisma.professorEmail.upsert({
-    where: { professorId_email: { professorId: prof1.id, email: 'schen@mit.edu' } },
+    where: { email: professorEmail },
     update: {},
     create: {
       professorId: prof1.id,
-      email: 'schen@mit.edu',
+      email: professorEmail,
+      emailHash: hashEmail(professorEmail),
       type: 'institutional',
       isPrimary: true,
       isVerified: true,
       verificationStatus: 'verified',
       verificationSource: 'manual_review',
-      domainMatch: true,
+      domainMatched: true,
       mxValid: true,
       verifiedAt: new Date(),
     },

@@ -25,6 +25,27 @@ import { slugify, normalizeName } from './utils/normalize.util';
 import { hashEmail } from '../faculty-scraper/utils/email.util';
 import { PROFESSOR_QUALITY_SCORE_QUEUE, QUALITY_SCORE_JOB_NAME } from '../professor-sync/professor-sync.constants';
 
+type OpenAlexAuthorRecord = {
+  id: string;
+  display_name?: string;
+  full_name?: string;
+  orcid?: string | null;
+  works_count?: number;
+  cited_by_count?: number;
+  summary_stats?: {
+    h_index?: number | null;
+  };
+  ids?: {
+    openalex?: string;
+    orcid?: string;
+  };
+  x_concepts?: Array<{
+    display_name?: string;
+    score?: number;
+    id?: string;
+  }>;
+};
+
 @Injectable()
 export class DiscoveryService {
   private readonly logger = new Logger(DiscoveryService.name);
@@ -57,7 +78,14 @@ export class DiscoveryService {
 
       const activeAdapters = this.getAdapters(job.data.sourceTypes);
 
-      for (const adapter of activeAdapters) {
+      const openAlexAdapter = activeAdapters.find((adapter) => adapter.sourceType === DataSource.openalex);
+      if (openAlexAdapter) {
+        await this.runOpenAlexUniversityImport(job, openAlexAdapter, universities, counters, failures);
+      }
+
+      const secondaryAdapters = activeAdapters.filter((adapter) => adapter.sourceType !== DataSource.openalex);
+
+      for (const adapter of secondaryAdapters) {
         for (const university of universities) {
           for (const researchArea of researchAreas) {
             const params: DiscoverySearchParams = {
@@ -122,7 +150,7 @@ export class DiscoveryService {
   private async upsertProfessor(
     adapter: AcademicSourceAdapter,
     university: Awaited<ReturnType<DiscoveryService['loadUniversities']>>[number],
-    researchArea: Awaited<ReturnType<DiscoveryService['loadResearchAreas']>>[number],
+    researchArea: Awaited<ReturnType<DiscoveryService['loadResearchAreas']>>[number] | null,
     candidate: SourceProfessorCandidate,
   ): Promise<'created' | 'updated' | 'skipped'> {
     const existing = await this.findExistingProfessor(adapter.sourceType, candidate, university.id);
@@ -187,7 +215,11 @@ export class DiscoveryService {
 
     await this.upsertProfessorSource(professor.id, adapter, candidate);
     await this.upsertProfessorEmails(professor.id, university.emailDomains || [], candidate);
-    await this.upsertResearchAreas(professor.id, [researchArea.name, ...candidate.researchAreas], adapter.sourceType);
+    await this.upsertResearchAreas(
+      professor.id,
+      [...(researchArea?.name ? [researchArea.name] : []), ...candidate.researchAreas],
+      adapter.sourceType,
+    );
     const qualityJob = await this.queueService.enqueueQualityScore({ professorId: professor.id, trigger: 'system' });
     await this.syncLogs.createQueuedLog({
       jobId: String(qualityJob.id),
@@ -406,6 +438,124 @@ export class DiscoveryService {
       return this.adapters;
     }
     return this.adapters.filter((adapter) => sourceTypes.includes(adapter.sourceType));
+  }
+
+  private async runOpenAlexUniversityImport(
+    job: Job<DiscoverProfessorsJobData>,
+    adapter: AcademicSourceAdapter,
+    universities: Awaited<ReturnType<DiscoveryService['loadUniversities']>>,
+    counters: SyncCounters,
+    failures: Array<{ source: string; universityId: string; researchAreaId: string; error: string }>,
+  ) {
+    for (const university of universities) {
+      if (!university.openalexId) {
+        continue;
+      }
+
+      let importedForUniversity = 0;
+      let cursor = '*';
+      const perUniversityLimit = job.data.limitPerCombination;
+
+      while (cursor && (perUniversityLimit ? importedForUniversity < perUniversityLimit : true)) {
+        const batchSize = perUniversityLimit
+          ? Math.min(100, Math.max(perUniversityLimit - importedForUniversity, 1))
+          : 100;
+
+        try {
+          const payload = await this.fetchOpenAlexAuthorsByUniversity(university.openalexId, cursor, batchSize);
+          const authors = Array.isArray(payload.results) ? payload.results : [];
+
+          if (authors.length === 0) {
+            break;
+          }
+
+          for (const author of authors) {
+            if (perUniversityLimit && importedForUniversity >= perUniversityLimit) {
+              break;
+            }
+
+            const candidate = this.mapOpenAlexAuthor(author);
+            if (!candidate) {
+              counters.skippedCount += 1;
+              continue;
+            }
+
+            counters.processedCount += 1;
+            const result = await this.upsertProfessor(adapter, university, null, candidate);
+            counters.createdCount += result === 'created' ? 1 : 0;
+            counters.updatedCount += result === 'updated' ? 1 : 0;
+            counters.skippedCount += result === 'skipped' ? 1 : 0;
+            importedForUniversity += 1;
+            await job.updateProgress(counters.processedCount);
+          }
+
+          cursor = payload.meta?.next_cursor || '';
+        } catch (error) {
+          failures.push({
+            source: adapter.name,
+            universityId: university.id,
+            researchAreaId: 'all',
+            error: (error as Error).message,
+          });
+          await job.log(`OpenAlex university import failed for ${university.name}: ${(error as Error).message}`);
+          break;
+        }
+      }
+    }
+  }
+
+  private async fetchOpenAlexAuthorsByUniversity(openalexInstitutionId: string, cursor: string, perPage: number) {
+    const url = new URL('/authors', process.env.OPENALEX_BASE_URL || 'https://api.openalex.org');
+    url.searchParams.set('filter', `last_known_institutions.id:${openalexInstitutionId}`);
+    url.searchParams.set('per-page', String(perPage));
+    url.searchParams.set('cursor', cursor);
+    if (process.env.OPENALEX_EMAIL) {
+      url.searchParams.set('mailto', process.env.OPENALEX_EMAIL);
+    }
+
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error(`OpenAlex authors API returned ${response.status} for ${openalexInstitutionId}`);
+    }
+
+    return response.json() as Promise<{
+      meta?: { next_cursor?: string | null };
+      results?: OpenAlexAuthorRecord[];
+    }>;
+  }
+
+  private mapOpenAlexAuthor(author: OpenAlexAuthorRecord): SourceProfessorCandidate | null {
+    const fullName = (author.display_name || author.full_name || '').trim();
+    if (!fullName) {
+      return null;
+    }
+
+    const [firstName, ...rest] = fullName.split(/\s+/);
+    const lastName = rest.length ? rest.join(' ') : null;
+    const openalexId = author.ids?.openalex || author.id;
+    if (!openalexId) {
+      return null;
+    }
+
+    return {
+      externalId: author.id,
+      sourceUrl: author.id,
+      fullName,
+      firstName: firstName || null,
+      lastName,
+      position: ProfessorPosition.professor,
+      openalexId,
+      orcidId: author.ids?.orcid || author.orcid || null,
+      researchAreas: (author.x_concepts || [])
+        .map((concept) => concept.display_name)
+        .filter((value): value is string => Boolean(value))
+        .slice(0, 5),
+      emails: [],
+      hIndex: author.summary_stats?.h_index ?? null,
+      citationsCount: author.cited_by_count ?? null,
+      publicationsCount: author.works_count ?? null,
+      rawPayload: author,
+    };
   }
 
   private loadUniversities(universityIds?: string[]) {

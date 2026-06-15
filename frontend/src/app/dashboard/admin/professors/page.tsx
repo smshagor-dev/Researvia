@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { Loader2, RefreshCcw, Search, Sparkles } from 'lucide-react';
 import {
   useAdminProfessor,
@@ -36,10 +37,14 @@ const verificationOptions = ['pending', 'verified', 'failed', 'manual_review'];
 const sourceOptions = ['openalex', 'orcid', 'crossref', 'ror', 'manual', 'import'];
 
 export default function AdminProfessorsPage() {
+  const router = useRouter();
+  const [selectedUniversityId, setSelectedUniversityId] = useState('');
+  const [selectedUniversityName, setSelectedUniversityName] = useState('');
   const [query, setQuery] = useState('');
   const [verificationStatus, setVerificationStatus] = useState('');
   const [hasEmail, setHasEmail] = useState('');
   const [page, setPage] = useState(1);
+  const [syncLogsPage, setSyncLogsPage] = useState(1);
   const [selectedId, setSelectedId] = useState('');
   const [editMode, setEditMode] = useState(false);
   const [form, setForm] = useState({
@@ -53,14 +58,15 @@ export default function AdminProfessorsPage() {
   const params = useMemo(
     () => ({
       q: query || undefined,
+      university: selectedUniversityId || undefined,
       verificationStatus: verificationStatus || undefined,
       hasEmail: hasEmail === '' ? undefined : hasEmail === 'true',
       page,
-      pageSize: 25,
+      pageSize: 15,
       sortBy: 'createdAt',
       sortOrder: 'desc',
     }),
-    [hasEmail, page, query, verificationStatus],
+    [hasEmail, page, query, selectedUniversityId, verificationStatus],
   );
 
   const { data, isLoading, isFetching } = useAdminProfessors(params);
@@ -69,7 +75,7 @@ export default function AdminProfessorsPage() {
   const resyncProfessor = useAdminProfessorResync();
   const discoverProfessorEmails = useAdminProfessorEmailDiscovery();
   const syncJobsQuery = useAdminSyncJobs();
-  const syncLogsQuery = useAdminSyncLogs({ page: 1, pageSize: 6 });
+  const syncLogsQuery = useAdminSyncLogs({ page: syncLogsPage, pageSize: 3 });
   const runDiscoverySync = useRunDiscoverySync();
   const runProfileSync = useRunProfileSync();
   const runPublicationSync = useRunPublicationSync();
@@ -79,7 +85,9 @@ export default function AdminProfessorsPage() {
   const meta = (data as any)?.meta || {};
   const detail = detailQuery.data as any;
   const syncJobs = (syncJobsQuery.data as any[]) || [];
-  const syncLogs = ((syncLogsQuery.data as any)?.data || []) as any[];
+  const syncLogsData = (syncLogsQuery.data as any) || {};
+  const syncLogs = (syncLogsData.data || []) as any[];
+  const syncLogsMeta = syncLogsData.meta || {};
   const jobCounts = syncJobs.reduce(
     (acc, queue) => {
       acc.running += Number(queue?.counts?.active || 0);
@@ -101,6 +109,17 @@ export default function AdminProfessorsPage() {
       isPublic: Boolean(detail.isPublic),
     });
   }, [detail, editMode]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [selectedUniversityId]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    setSelectedUniversityId(params.get('university') || '');
+    setSelectedUniversityName(params.get('universityName') || '');
+  }, []);
 
   const openModal = (id: string, mode: 'view' | 'edit') => {
     setSelectedId(id);
@@ -127,12 +146,33 @@ export default function AdminProfessorsPage() {
     setEditMode(false);
   };
 
+  const clearUniversityFilter = () => {
+    setSelectedUniversityId('');
+    setSelectedUniversityName('');
+    router.push('/dashboard/admin/professors');
+    setPage(1);
+  };
+
   return (
     <div className="mx-auto w-full max-w-[1680px] px-6 py-6 xl:px-8">
       <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
         <div className="min-w-[260px]">
           <h1 className="text-2xl font-bold text-gray-900">Professors</h1>
           <p className="mt-1 text-sm text-gray-500">Dedicated admin management for professor records and sync metadata.</p>
+          {selectedUniversityId ? (
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <span className="rounded-full bg-sky-100 px-3 py-1 text-xs font-medium text-sky-700">
+                University: {selectedUniversityName || selectedUniversityId}
+              </span>
+              <button
+                type="button"
+                onClick={clearUniversityFilter}
+                className="rounded-full border border-gray-200 px-3 py-1 text-xs font-medium text-gray-600"
+              >
+                Show all universities
+              </button>
+            </div>
+          ) : null}
         </div>
         <div className="flex flex-wrap items-center gap-3">
           <div className="relative">
@@ -176,16 +216,19 @@ export default function AdminProfessorsPage() {
       </div>
 
       <div className="mb-6 grid gap-4 xl:grid-cols-[1.6fr,1fr]">
-        <div className="rounded-2xl border border-sky-100 bg-gradient-to-br from-sky-50 via-white to-cyan-50 p-5">
+        <div className="rounded-2xl border border-sky-100 bg-gradient-to-br from-sky-50 via-white to-cyan-50 p-5 dark:border-sky-500/20 dark:bg-[linear-gradient(135deg,rgba(8,47,73,0.92),rgba(15,23,42,0.96),rgba(8,51,68,0.92))]">
           <div className="flex items-start justify-between gap-4">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-sky-600">Sync Control</p>
-              <h2 className="mt-2 text-xl font-semibold text-slate-900">Professor Discovery Engine</h2>
-              <p className="mt-1 text-sm text-slate-600">
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-sky-600 dark:text-sky-300">Sync Control</p>
+              <h2 className="mt-2 text-xl font-semibold text-slate-900 dark:text-white">Professor Discovery Engine</h2>
+              <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
                 Queue discovery, profile, publication, and deduplication runs without blocking the admin page.
               </p>
+              <p className="mt-2 text-xs font-medium uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
+                Auto sync every 12 hours
+              </p>
             </div>
-            <Sparkles className="h-5 w-5 text-sky-500" />
+            <Sparkles className="h-5 w-5 text-sky-500 dark:text-sky-300" />
           </div>
 
           <div className="mt-5 flex flex-wrap gap-3">
@@ -193,15 +236,15 @@ export default function AdminProfessorsPage() {
               type="button"
               onClick={() => runDiscoverySync.mutate({})}
               disabled={runDiscoverySync.isPending}
-              className="rounded-xl bg-sky-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+              className="rounded-xl bg-sky-600 px-4 py-2 text-sm font-medium text-white shadow-sm shadow-sky-900/15 transition hover:bg-sky-500 disabled:opacity-50 dark:bg-sky-500 dark:text-slate-950 dark:hover:bg-sky-400"
             >
-              {runDiscoverySync.isPending ? 'Queueing...' : 'Run Discovery Sync'}
+              {runDiscoverySync.isPending ? 'Queueing...' : 'Load Professors'}
             </button>
             <button
               type="button"
               onClick={() => runProfileSync.mutate()}
               disabled={runProfileSync.isPending}
-              className="rounded-xl border border-sky-200 bg-white px-4 py-2 text-sm font-medium text-sky-700 disabled:opacity-50"
+              className="rounded-xl border border-sky-200 bg-white px-4 py-2 text-sm font-medium text-sky-700 transition hover:bg-sky-50 disabled:opacity-50 dark:border-sky-400/20 dark:bg-white/5 dark:text-sky-200 dark:hover:bg-white/10"
             >
               {runProfileSync.isPending ? 'Queueing...' : 'Run Profile Sync'}
             </button>
@@ -209,7 +252,7 @@ export default function AdminProfessorsPage() {
               type="button"
               onClick={() => runPublicationSync.mutate()}
               disabled={runPublicationSync.isPending}
-              className="rounded-xl border border-sky-200 bg-white px-4 py-2 text-sm font-medium text-sky-700 disabled:opacity-50"
+              className="rounded-xl border border-sky-200 bg-white px-4 py-2 text-sm font-medium text-sky-700 transition hover:bg-sky-50 disabled:opacity-50 dark:border-sky-400/20 dark:bg-white/5 dark:text-sky-200 dark:hover:bg-white/10"
             >
               {runPublicationSync.isPending ? 'Queueing...' : 'Run Publication Sync'}
             </button>
@@ -217,7 +260,7 @@ export default function AdminProfessorsPage() {
               type="button"
               onClick={() => runDeduplication.mutate()}
               disabled={runDeduplication.isPending}
-              className="rounded-xl border border-sky-200 bg-white px-4 py-2 text-sm font-medium text-sky-700 disabled:opacity-50"
+              className="rounded-xl border border-sky-200 bg-white px-4 py-2 text-sm font-medium text-sky-700 transition hover:bg-sky-50 disabled:opacity-50 dark:border-sky-400/20 dark:bg-white/5 dark:text-sky-200 dark:hover:bg-white/10"
             >
               {runDeduplication.isPending ? 'Queueing...' : 'Run Deduplication'}
             </button>
@@ -225,24 +268,24 @@ export default function AdminProfessorsPage() {
         </div>
 
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
-          <div className="rounded-2xl border border-gray-100 bg-white p-4">
-            <p className="text-xs uppercase text-gray-500">Last sync time</p>
-            <p className="mt-2 text-lg font-semibold text-gray-900">
+          <div className="rounded-2xl border border-gray-100 bg-white p-4 dark:border-white/10 dark:bg-white/5">
+            <p className="text-xs uppercase text-gray-500 dark:text-slate-400">Last sync time</p>
+            <p className="mt-2 text-lg font-semibold text-gray-900 dark:text-white">
               {lastSyncTime ? new Date(lastSyncTime).toLocaleString() : 'No sync yet'}
             </p>
           </div>
           <div className="grid grid-cols-3 gap-3">
-            <div className="rounded-2xl border border-gray-100 bg-white p-4">
-              <p className="text-xs uppercase text-gray-500">Running</p>
-              <p className="mt-2 text-lg font-semibold text-gray-900">{jobCounts.running}</p>
+            <div className="rounded-2xl border border-gray-100 bg-white p-4 dark:border-white/10 dark:bg-white/5">
+              <p className="text-xs uppercase text-gray-500 dark:text-slate-400">Running</p>
+              <p className="mt-2 text-lg font-semibold text-gray-900 dark:text-white">{jobCounts.running}</p>
             </div>
-            <div className="rounded-2xl border border-gray-100 bg-white p-4">
-              <p className="text-xs uppercase text-gray-500">Queued</p>
-              <p className="mt-2 text-lg font-semibold text-gray-900">{jobCounts.waiting}</p>
+            <div className="rounded-2xl border border-gray-100 bg-white p-4 dark:border-white/10 dark:bg-white/5">
+              <p className="text-xs uppercase text-gray-500 dark:text-slate-400">Queued</p>
+              <p className="mt-2 text-lg font-semibold text-gray-900 dark:text-white">{jobCounts.waiting}</p>
             </div>
-            <div className="rounded-2xl border border-gray-100 bg-white p-4">
-              <p className="text-xs uppercase text-gray-500">Failed</p>
-              <p className="mt-2 text-lg font-semibold text-red-600">{jobCounts.failed}</p>
+            <div className="rounded-2xl border border-gray-100 bg-white p-4 dark:border-white/10 dark:bg-white/5">
+              <p className="text-xs uppercase text-gray-500 dark:text-slate-400">Failed</p>
+              <p className="mt-2 text-lg font-semibold text-red-600 dark:text-rose-300">{jobCounts.failed}</p>
             </div>
           </div>
         </div>
@@ -278,6 +321,36 @@ export default function AdminProfessorsPage() {
             ))}
             {syncLogs.length === 0 ? <p className="text-sm text-gray-500">No sync logs yet.</p> : null}
           </div>
+          {syncLogs.length > 0 ? (
+            <div className="mt-4 flex items-center justify-between border-t border-gray-100 pt-4 text-sm text-gray-600">
+              <p>
+                Page {syncLogsMeta.currentPage || 1} of {syncLogsMeta.totalPages || 1}
+                {' '}·{' '}Showing up to 3 logs
+              </p>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setSyncLogsPage((current) => Math.max(1, current - 1))}
+                  disabled={(syncLogsMeta.currentPage || 1) <= 1}
+                  className="rounded-lg border border-gray-200 px-3 py-1.5 disabled:opacity-50"
+                >
+                  Previous
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setSyncLogsPage((current) =>
+                      (syncLogsMeta.currentPage || 1) < (syncLogsMeta.totalPages || 1) ? current + 1 : current,
+                    )
+                  }
+                  disabled={(syncLogsMeta.currentPage || 1) >= (syncLogsMeta.totalPages || 1)}
+                  className="rounded-lg border border-gray-200 px-3 py-1.5 disabled:opacity-50"
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          ) : null}
         </div>
 
         <div className="rounded-2xl border border-gray-100 bg-white p-5">

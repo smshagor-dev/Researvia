@@ -6,8 +6,8 @@ export const authApi = {
     api.post('/auth/register', data).then((r) => {
       const result = unwrap<any>(r);
       if (result.accessToken) {
-        setToken(result.accessToken);
-        setRefresh(result.refreshToken);
+        setToken(result.accessToken, true);
+        setRefresh(result.refreshToken, true);
       }
       return result;
     }),
@@ -16,8 +16,9 @@ export const authApi = {
     api.post('/auth/login', data).then((r) => {
       const result = unwrap<any>(r);
       if (result.accessToken) {
-        setToken(result.accessToken);
-        setRefresh(result.refreshToken);
+        const rememberMe = Boolean(data.rememberMe);
+        setToken(result.accessToken, rememberMe);
+        setRefresh(result.refreshToken, rememberMe);
       }
       return result;
     }),
@@ -269,6 +270,8 @@ export const universitiesApi = {
   list: (params?: any) => api.get('/universities', { params }).then(unwrap),
   get: (id: string) => api.get(`/universities/${id}`).then(unwrap),
   getCountries: () => api.get('/universities/countries').then(unwrap),
+  getSyncStats: () => api.get('/universities/sync/stats').then(unwrap),
+  sync: () => api.post('/universities/sync').then(unwrap),
 };
 
 // ─── Research Areas ───────────────────────────────────────────────────────────

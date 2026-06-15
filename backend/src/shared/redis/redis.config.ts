@@ -1,6 +1,7 @@
 import type { ConfigService } from '@nestjs/config';
 
 export type RedisConnectionOptions = {
+  family: 4;
   host: string;
   port: number;
   password?: string;
@@ -17,6 +18,7 @@ export function getRedisConnectionOptions(config: ConfigService): RedisConnectio
     const parsed = new URL(redisUrl);
 
     return {
+      family: 4,
       host: parsed.hostname,
       port: Number(parsed.port || 6379),
       password: parsed.password || undefined,
@@ -25,10 +27,10 @@ export function getRedisConnectionOptions(config: ConfigService): RedisConnectio
   }
 
   return {
+    family: 4,
     host: config.get<string>('REDIS_HOST', 'localhost'),
     port: config.get<number>('REDIS_PORT', 6379),
     password: config.get<string>('REDIS_PASSWORD') || undefined,
     db: config.get<number>('REDIS_DB', 0),
   };
 }
-

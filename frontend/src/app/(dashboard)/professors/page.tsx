@@ -36,6 +36,10 @@ function ProfessorsPageContent() {
   const { data, isLoading } = useProfessors(params);
   const { data: countries } = useCountries();
   const { data: researchAreas } = useResearchAreas();
+  const { data: universities } = useUniversities({
+    countryId: params.countryId || undefined,
+    perPage: 100,
+  });
 
   const result = data as any;
   const professors = result?.data || [];
@@ -86,6 +90,17 @@ function ProfessorsPageContent() {
           <option value="">All Areas</option>
           {(researchAreas as any[])?.map((r: any) => (
             <option key={r.id} value={r.id}>{r.name}</option>
+          ))}
+        </select>
+      </div>
+
+      <div>
+        <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">University</label>
+        <select value={params.universityId} onChange={e => updateParam('universityId', e.target.value)}
+          className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+          <option value="">All Universities</option>
+          {((universities as any)?.data || []).map((u: any) => (
+            <option key={u.id} value={u.id}>{u.name}</option>
           ))}
         </select>
       </div>

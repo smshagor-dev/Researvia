@@ -14,7 +14,10 @@ const schema = z.object({
   email: z.string().email('Invalid email'),
   password: z.string().min(1, 'Password required'),
   totpCode: z.string().optional(),
+  rememberMe: z.boolean().optional(),
 });
+
+type LoginFormValues = z.infer<typeof schema>;
 
 export default function LoginPage() {
   const router = useRouter();
@@ -23,8 +26,11 @@ export default function LoginPage() {
   const [needs2FA, setNeeds2FA] = useState(false);
   const [error, setError] = useState('');
 
-  const { register, handleSubmit, formState: { errors } } = useForm({
+  const { register, handleSubmit, formState: { errors } } = useForm<LoginFormValues>({
     resolver: zodResolver(schema),
+    defaultValues: {
+      rememberMe: true,
+    },
   });
 
   const onSubmit = async (data: any) => {
@@ -112,8 +118,15 @@ export default function LoginPage() {
               </div>
             )}
 
-            <div className="flex items-center justify-between">
-              <div />
+            <div className="flex items-center justify-between gap-3">
+              <label className="flex items-center gap-2 text-sm font-medium text-gray-600 dark:text-slate-300">
+                <input
+                  type="checkbox"
+                  {...register('rememberMe')}
+                  className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 dark:border-slate-600 dark:bg-slate-900"
+                />
+                Remember me
+              </label>
               <Link href="/forgot-password" className="text-sm font-medium text-blue-600 transition hover:text-blue-700 dark:text-indigo-300 dark:hover:text-indigo-200">
                 Forgot password?
               </Link>
@@ -121,6 +134,7 @@ export default function LoginPage() {
 
             <button
               type="submit"
+              disabled={login.isPending}
               className="gradient-primary flex w-full items-center justify-center gap-2 rounded-lg px-4 py-2.5 font-semibold text-white shadow-lg shadow-indigo-600/20 transition hover:-translate-y-0.5 hover:opacity-95 disabled:translate-y-0 disabled:opacity-60"
             >
               {login.isPending && <Loader2 className="w-4 h-4 animate-spin" />}

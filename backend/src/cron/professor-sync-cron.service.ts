@@ -8,12 +8,12 @@ export class ProfessorSyncCronService {
 
   constructor(private readonly professorSyncAdmin: ProfessorSyncAdminService) {}
 
-  @Cron(process.env.DISCOVERY_DAILY_CRON || '0 2 * * *')
+  @Cron('0 */12 * * *')
   async enqueueDiscovery() {
     const result = await this.professorSyncAdmin.runDiscoverySync('system-cron', {
       sourceTypes: ['openalex', 'orcid', 'crossref', 'ror'],
     });
-    this.logger.log(`Queued discovery sync job ${result.jobId}`);
+    this.logger.log(`Queued 12-hour professor discovery sync job ${result.jobId}`);
   }
 
   @Cron(process.env.PROFILE_SYNC_DAILY_CRON || '0 3 * * *')

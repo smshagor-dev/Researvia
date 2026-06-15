@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { clearTokens } from '../api/client';
 
 interface User {
   id: string;
@@ -38,10 +39,7 @@ export const useAuthStore = create<AuthStore>()(
       setLoading: (isLoading) => set({ isLoading }),
       setHasHydrated: (hasHydrated) => set({ hasHydrated }),
       logout: () => {
-        if (typeof window !== 'undefined') {
-          localStorage.removeItem('access_token');
-          localStorage.removeItem('refresh_token');
-        }
+        clearTokens();
         set({ user: null, isAuthenticated: false });
       },
       updateCredits: (balance) =>

@@ -1,16 +1,82 @@
 import axios, { AxiosInstance, AxiosError } from 'axios';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/v1';
+const ACCESS_TOKEN_KEY = 'access_token';
+const REFRESH_TOKEN_KEY = 'refresh_token';
+const AUTH_STORAGE_KEY = 'auth_storage';
+type AuthStorageMode = 'local' | 'session';
 
 // Storage helpers (works in browser only)
-const getToken = () => (typeof window !== 'undefined' ? localStorage.getItem('access_token') : null);
-const setToken = (t: string) => typeof window !== 'undefined' && localStorage.setItem('access_token', t);
-const getRefresh = () => (typeof window !== 'undefined' ? localStorage.getItem('refresh_token') : null);
-const setRefresh = (t: string) => typeof window !== 'undefined' && localStorage.setItem('refresh_token', t);
+function getActiveStorageMode(): AuthStorageMode | null {
+  if (typeof window === 'undefined') return null;
+
+  const storedMode = localStorage.getItem(AUTH_STORAGE_KEY);
+  if (storedMode === 'local' || storedMode === 'session') {
+    return storedMode;
+  }
+
+  if (sessionStorage.getItem(ACCESS_TOKEN_KEY) || sessionStorage.getItem(REFRESH_TOKEN_KEY)) {
+    return 'session';
+  }
+
+  if (localStorage.getItem(ACCESS_TOKEN_KEY) || localStorage.getItem(REFRESH_TOKEN_KEY)) {
+    return 'local';
+  }
+
+  return null;
+}
+
+function getStorageForMode(mode: AuthStorageMode) {
+  return mode === 'session' ? sessionStorage : localStorage;
+}
+
+const getToken = () => {
+  if (typeof window === 'undefined') return null;
+  const mode = getActiveStorageMode();
+  if (mode) {
+    return getStorageForMode(mode).getItem(ACCESS_TOKEN_KEY);
+  }
+  return localStorage.getItem(ACCESS_TOKEN_KEY) || sessionStorage.getItem(ACCESS_TOKEN_KEY);
+};
+
+const setToken = (t: string, rememberMe = true) => {
+  if (typeof window === 'undefined') return;
+  const mode: AuthStorageMode = rememberMe ? 'local' : 'session';
+  const storage = getStorageForMode(mode);
+  const otherStorage = getStorageForMode(mode === 'local' ? 'session' : 'local');
+
+  storage.setItem(ACCESS_TOKEN_KEY, t);
+  otherStorage.removeItem(ACCESS_TOKEN_KEY);
+  localStorage.setItem(AUTH_STORAGE_KEY, mode);
+};
+
+const getRefresh = () => {
+  if (typeof window === 'undefined') return null;
+  const mode = getActiveStorageMode();
+  if (mode) {
+    return getStorageForMode(mode).getItem(REFRESH_TOKEN_KEY);
+  }
+  return localStorage.getItem(REFRESH_TOKEN_KEY) || sessionStorage.getItem(REFRESH_TOKEN_KEY);
+};
+
+const setRefresh = (t: string, rememberMe = true) => {
+  if (typeof window === 'undefined') return;
+  const mode: AuthStorageMode = rememberMe ? 'local' : 'session';
+  const storage = getStorageForMode(mode);
+  const otherStorage = getStorageForMode(mode === 'local' ? 'session' : 'local');
+
+  storage.setItem(REFRESH_TOKEN_KEY, t);
+  otherStorage.removeItem(REFRESH_TOKEN_KEY);
+  localStorage.setItem(AUTH_STORAGE_KEY, mode);
+};
+
 const clearTokens = () => {
   if (typeof window !== 'undefined') {
-    localStorage.removeItem('access_token');
-    localStorage.removeItem('refresh_token');
+    localStorage.removeItem(ACCESS_TOKEN_KEY);
+    localStorage.removeItem(REFRESH_TOKEN_KEY);
+    localStorage.removeItem(AUTH_STORAGE_KEY);
+    sessionStorage.removeItem(ACCESS_TOKEN_KEY);
+    sessionStorage.removeItem(REFRESH_TOKEN_KEY);
   }
 };
 
@@ -59,8 +125,10 @@ api.interceptors.response.use(
       try {
         const { data } = await axios.post(`${API_URL}/auth/refresh`, { refreshToken });
         const { accessToken, refreshToken: newRefresh } = data.data || data;
-        setToken(accessToken);
-        setRefresh(newRefresh);
+        const storageMode = getActiveStorageMode() ?? 'local';
+        const rememberMe = storageMode === 'local';
+        setToken(accessToken, rememberMe);
+        setRefresh(newRefresh, rememberMe);
         queue.forEach((cb) => cb(accessToken));
         queue = [];
         original.headers.Authorization = `Bearer ${accessToken}`;

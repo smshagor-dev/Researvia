@@ -6,7 +6,7 @@
   "scripts": {
     "build": "nest build",
     "start": "npm run db:prepare && node dist/main.js",
-    "dev": "npm run db:prepare:dev && nest start --watch",
+    "dev": "powershell -ExecutionPolicy Bypass -File scripts/start-dev.ps1",
     "start:dev": "npm run dev",
     "start:debug": "nest start --debug --watch",
     "start:worker": "node dist/workers/index.js",
@@ -21,7 +21,10 @@
     "prisma:migrate": "prisma migrate deploy",
     "prisma:studio": "prisma studio",
     "prisma:seed": "ts-node prisma/seed.ts",
+    "import:universities:openalex": "ts-node prisma/import-openalex-universities.ts",
+    "import:professors:openalex": "ts-node prisma/import-openalex-professors.ts",
     "backfill:student-access": "ts-node prisma/backfill-student-access.ts",
+    "redis:ensure": "powershell -ExecutionPolicy Bypass -File scripts/ensure-redis.ps1",
     "load:test:100": "node scripts/load-test.mjs 100",
     "load:test:1000": "node scripts/load-test.mjs 1000"
   },
@@ -70,6 +73,7 @@
     "mime-types": "^2.1.35",
     "multer": "^1.4.5-lts.1",
     "nodemailer": "^6.9.14",
+    "nvm": "^0.0.4",
     "openai": "^4.52.7",
     "otplib": "^12.0.1",
     "passport": "^0.7.0",

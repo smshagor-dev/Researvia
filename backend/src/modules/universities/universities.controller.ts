@@ -12,6 +12,12 @@ export class UniversitiesController {
   @Get() @UseGuards(OptionalJwtGuard)
   async findAll(@Query() f: any) { return this.universitiesService.findAll(f); }
 
+  @Get('sync/stats') @UseGuards(OptionalJwtGuard)
+  async getSyncStats() { return this.universitiesService.getSyncStats(); }
+
+  @Post('sync') @UseGuards(JwtAuthGuard, RolesGuard) @Roles('admin','super_admin') @ApiBearerAuth()
+  async syncUniversities() { return this.universitiesService.triggerSyncFromOpenAlex('manual'); }
+
   @Get('countries') @UseGuards(OptionalJwtGuard)
   async getCountries() { return this.universitiesService.getCountries(); }
 

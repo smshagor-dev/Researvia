@@ -9,8 +9,9 @@ import { AiModule } from '../modules/ai/ai.module';
 import { AiMatchCronService } from './ai-match-cron.service';
 import { OpportunitiesModule } from '../modules/opportunities/opportunities.module';
 import { OpportunityCronService } from '../modules/opportunities/opportunity-cron.service';
+import { UniversitiesModule } from '../modules/universities/universities.module';
 @Module({
-  imports: [ScholarshipsModule, EmailMessagesModule, InboxSyncModule, ProfessorSyncModule, AiModule, OpportunitiesModule],
+  imports: [ScholarshipsModule, EmailMessagesModule, InboxSyncModule, ProfessorSyncModule, AiModule, OpportunitiesModule, UniversitiesModule],
   providers: [CronService, ProfessorSyncCronService, AiMatchCronService, OpportunityCronService],
 })
 export class CronModule {}
