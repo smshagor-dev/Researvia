@@ -8,9 +8,10 @@ import { RorAdapter } from './adapters/ror.adapter';
 import { ACADEMIC_SOURCE_ADAPTERS } from './discovery.constants';
 import { QueuesModule } from '../../queues/queues.module';
 import { SyncLogsModule } from '../sync-logs/sync-logs.module';
+import { SystemSettingsModule } from '../system-settings/system-settings.module';
 
 @Module({
-  imports: [ConfigModule, QueuesModule, SyncLogsModule],
+  imports: [ConfigModule, QueuesModule, SyncLogsModule, SystemSettingsModule],
   providers: [
     DiscoveryService,
     OpenAlexAdapter,
@@ -31,4 +32,3 @@ import { SyncLogsModule } from '../sync-logs/sync-logs.module';
   exports: [DiscoveryService, ACADEMIC_SOURCE_ADAPTERS],
 })
 export class DiscoveryModule {}
-

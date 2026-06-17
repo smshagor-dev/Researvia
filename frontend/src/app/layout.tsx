@@ -7,8 +7,8 @@ import { Toaster } from '@/components/ui/toaster';
 const inter = Inter({ subsets: ['latin'], variable: '--font-sans' });
 
 export const metadata: Metadata = {
-  title: { default: 'ProfCRM - AI Academic Communication Platform', template: '%s | ProfCRM' },
-  description: 'Find professors, discover scholarships, generate personalized academic emails, and track communication with ProfCRM.',
+  title: { default: 'ResearVia - Academic Outreach Platform', template: '%s | ResearVia' },
+  description: 'Discover professors, scholarships, and research opportunities, then manage outreach and application workflows in ResearVia.',
   keywords: [
     'AI academic communication',
     'professor outreach',
@@ -19,8 +19,8 @@ export const metadata: Metadata = {
   ],
   openGraph: {
     type: 'website',
-    title: 'ProfCRM - AI Academic Communication Platform',
-    description: 'A premium platform for professor discovery, scholarship search, AI email writing, and academic outreach tracking.',
+    title: 'ResearVia - Academic Outreach Platform',
+    description: 'A platform for professor discovery, scholarship search, AI-assisted outreach, and research opportunity tracking.',
   },
 };
 

@@ -5,6 +5,7 @@ import { EmailAccountsService } from '../email-accounts/email-accounts.service';
 import { StudentProfileService } from '../student-profile/student-profile.service';
 import { SecurityService } from '../security/security.service';
 import { AuditLogService } from '../security/audit-log.service';
+import { CreditsService } from '../credits/credits.service';
 
 @Injectable()
 export class UsersService {
@@ -15,6 +16,7 @@ export class UsersService {
     private readonly studentProfiles: StudentProfileService,
     private readonly security: SecurityService,
     private readonly audit: AuditLogService,
+    private readonly credits: CreditsService,
   ) {}
 
   async findMe(userId: string) {
@@ -455,29 +457,14 @@ export class UsersService {
   }
 
   async adjustCredits(userId: string, amount: number, description: string) {
-    const credits = await this.prisma.credits.findUnique({ where: { userId } });
-    if (!credits) throw new NotFoundException('Credits record not found');
-
-    const newBalance = credits.balance + amount;
-    await this.prisma.$transaction([
-      this.prisma.credits.update({
-        where: { userId },
-        data: {
-          balance: newBalance,
-          lifetimeEarned: amount > 0 ? { increment: amount } : undefined,
-          lifetimeSpent: amount < 0 ? { increment: Math.abs(amount) } : undefined,
-        },
-      }),
-      this.prisma.creditTransaction.create({
-        data: {
-          userId,
-          amount,
-          type: 'admin_adjustment',
-          description,
-          balanceAfter: newBalance,
-        },
-      }),
-    ]);
-    return { balance: newBalance };
+    const result = await this.credits.adjust(userId, amount, {
+      type: 'admin_adjustment',
+      reason: 'admin_adjustment',
+      description,
+      allowNegative: false,
+      createIfMissing: false,
+      metadataJson: { source: 'admin_panel' },
+    });
+    return { balance: result.balance };
   }
 }

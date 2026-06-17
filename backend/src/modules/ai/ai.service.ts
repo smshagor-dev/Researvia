@@ -4,6 +4,7 @@ import { PrismaService } from '../../shared/prisma/prisma.service';
 import { RedisService } from '../../shared/redis/redis.service';
 import { Response } from 'express';
 import { MatchEngineService } from './match-engine.service';
+import { SystemSettingsService } from '../system-settings/system-settings.service';
 
 @Injectable()
 export class AiService {
@@ -14,6 +15,7 @@ export class AiService {
     private readonly redis: RedisService,
     private readonly config: ConfigService,
     private readonly matches: MatchEngineService,
+    private readonly systemSettings: SystemSettingsService,
   ) {}
 
   async generateOutreach(
@@ -102,7 +104,11 @@ Keep it under 150 words. Start with "Dear Prof. ${thread.professor?.lastName || 
   }
 
   private async streamFromAI(systemPrompt: string, userPrompt: string, res: Response) {
-    const apiKey = this.config.get<string>('ANTHROPIC_API_KEY');
+    const provider = (await this.systemSettings.getString('ai.provider', 'anthropic')) || 'anthropic';
+    const apiKey = provider === 'anthropic' ? this.config.get<string>('ANTHROPIC_API_KEY') : null;
+    const model =
+      await this.systemSettings.getString('ai.anthropic.model', 'claude-haiku-4-5-20251001')
+      || 'claude-haiku-4-5-20251001';
 
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
@@ -130,7 +136,7 @@ Keep it under 150 words. Start with "Dear Prof. ${thread.professor?.lastName || 
           'anthropic-version': '2023-06-01',
         },
         body: JSON.stringify({
-          model: 'claude-haiku-4-5-20251001',
+          model,
           max_tokens: 1024,
           stream: true,
           system: systemPrompt,

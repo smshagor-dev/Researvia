@@ -22,7 +22,7 @@ export default function ForgotPasswordPage() {
             <div className="w-10 h-10 rounded-xl gradient-primary flex items-center justify-center">
               <GraduationCap className="w-6 h-6 text-white" />
             </div>
-            <span className="text-2xl font-bold gradient-text">ProfCRM</span>
+            <span className="text-2xl font-bold gradient-text">ResearVia</span>
           </div>
           <h1 className="text-2xl font-bold text-gray-900">Reset Password</h1>
         </div>

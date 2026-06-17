@@ -147,7 +147,7 @@ export function AuthModal({ mode, open, onClose, onModeChange }: AuthModalProps)
               <GraduationCap className="h-5 w-5" aria-hidden="true" />
             </span>
             <div>
-              <p className="text-sm font-bold text-slate-950 dark:text-slate-100">ProfCRM</p>
+              <p className="text-sm font-bold text-slate-950 dark:text-slate-100">ResearVia</p>
               <p className="text-xs text-slate-500 dark:text-slate-400">Academic communication platform</p>
             </div>
           </div>

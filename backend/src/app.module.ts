@@ -48,6 +48,7 @@ import { SecurityModule } from './modules/security/security.module';
 import { ObservabilityModule } from './modules/observability/observability.module';
 import { BackupsModule } from './modules/backups/backups.module';
 import { AdminAuditInterceptor } from './modules/security/admin-audit.interceptor';
+import { SystemSettingsModule } from './modules/system-settings/system-settings.module';
 
 @Module({
   imports: [
@@ -56,6 +57,7 @@ import { AdminAuditInterceptor } from './modules/security/admin-audit.intercepto
     ThrottlerModule.forRoot([{ ttl: 60000, limit: 200 }]),
     AppConfigModule,
     PrismaModule,
+    SystemSettingsModule,
     RequestContextModule,
     RedisModule,
     StorageModule,

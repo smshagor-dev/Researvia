@@ -8,10 +8,10 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_PREFIX: ${{ github.repository_owner }}/profcrm
+  IMAGE_PREFIX: ${{ github.repository_owner }}/researvia
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
-  # ─── Test Backend ──────────────────────────────────────────────────────────
   test-backend:
     name: Test Backend
     runs-on: ubuntu-latest
@@ -20,8 +20,8 @@ jobs:
         image: mysql:8.0
         env:
           MYSQL_ROOT_PASSWORD: rootpass
-          MYSQL_DATABASE: profcrm_test
-          MYSQL_USER: profcrm
+          MYSQL_DATABASE: researvia_test
+          MYSQL_USER: researvia
           MYSQL_PASSWORD: testpass
         ports:
           - 3306:3306
@@ -41,13 +41,13 @@ jobs:
           --health-retries=5
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
-          node-version: '22'
-          cache: 'npm'
+          node-version: "22"
+          cache: npm
           cache-dependency-path: backend/package-lock.json
 
       - name: Install backend dependencies
@@ -56,41 +56,41 @@ jobs:
 
       - name: Generate Prisma client
         working-directory: backend
-        run: npx prisma generate
+        run: npm run prisma:generate
 
       - name: Run migrations on test DB
         working-directory: backend
         env:
-          DATABASE_URL: mysql://profcrm:testpass@localhost:3306/profcrm_test
-        run: npx prisma migrate deploy
+          DATABASE_URL: mysql://researvia:testpass@localhost:3306/researvia_test
+        run: npm run prisma:migrate
 
       - name: Run unit tests
         working-directory: backend
         env:
-          DATABASE_URL: mysql://profcrm:testpass@localhost:3306/profcrm_test
+          DATABASE_URL: mysql://researvia:testpass@localhost:3306/researvia_test
           REDIS_URL: redis://localhost:6379
           JWT_SECRET: test-jwt-secret-32-chars-minimum-here
+          JWT_REFRESH_SECRET: test-refresh-secret-32-chars-minimum
           ENCRYPTION_KEY: 0123456789abcdef0123456789abcdef
           NODE_ENV: test
-        run: npm test -- --passWithNoTests
+        run: npm test
 
       - name: Build backend
         working-directory: backend
         run: npm run build
 
-  # ─── Test Frontend ─────────────────────────────────────────────────────────
   test-frontend:
     name: Test Frontend
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
-          node-version: '22'
-          cache: 'npm'
+          node-version: "22"
+          cache: npm
           cache-dependency-path: frontend/package-lock.json
 
       - name: Install frontend dependencies
@@ -99,7 +99,7 @@ jobs:
 
       - name: TypeScript check
         working-directory: frontend
-        run: npx tsc --noEmit || true
+        run: npx tsc --noEmit
 
       - name: Build frontend
         working-directory: frontend
@@ -108,18 +108,53 @@ jobs:
           NEXT_PUBLIC_WS_URL: http://localhost:3001
         run: npm run build
 
-  # ─── Build & Push Docker Images ────────────────────────────────────────────
+      - name: Verify standalone output
+        working-directory: frontend
+        run: test -f .next/standalone/server.js
+
+  build-docker:
+    name: Build Docker Images
+    runs-on: ubuntu-latest
+    needs: [test-backend, test-frontend]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build backend image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./backend
+          push: false
+          tags: researvia-api:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build frontend image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./frontend
+          push: false
+          tags: researvia-frontend:ci
+          build-args: |
+            NEXT_PUBLIC_API_URL=http://localhost:3001/v1
+            NEXT_PUBLIC_WS_URL=http://localhost:3001
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
   build-and-push:
     name: Build & Push Images
     runs-on: ubuntu-latest
-    needs: [test-backend, test-frontend]
+    needs: [test-backend, test-frontend, build-docker]
     if: github.ref == 'refs/heads/main'
     permissions:
       contents: read
       packages: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
@@ -132,7 +167,7 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Build & push API image
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           context: ./backend
           platforms: linux/amd64
@@ -144,7 +179,7 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Build & push Frontend image
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           context: ./frontend
           platforms: linux/amd64
@@ -158,7 +193,6 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-  # ─── Deploy to VPS ─────────────────────────────────────────────────────────
   deploy:
     name: Deploy to Production
     runs-on: ubuntu-latest
@@ -169,7 +203,7 @@ jobs:
       url: https://${{ vars.DOMAIN }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Deploy to VPS via SSH
         uses: appleboy/ssh-action@v1.0.3
@@ -179,41 +213,30 @@ jobs:
           key: ${{ secrets.VPS_SSH_KEY }}
           envs: GITHUB_SHA
           script: |
-            cd /opt/profcrm
-            
-            # Pull latest images
+            cd /opt/researvia
             echo ${{ secrets.GITHUB_TOKEN }} | docker login ghcr.io -u ${{ github.actor }} --password-stdin
             docker compose -f docker-compose.prod.yml pull
-            
-            # Run migrations
             docker compose -f docker-compose.prod.yml run --rm api sh -c "npx prisma migrate deploy"
-            
-            # Rolling restart API (one replica at a time)
             docker compose -f docker-compose.prod.yml up -d --no-deps --scale api=2 api
             sleep 20
-            
-            # Restart other services
             docker compose -f docker-compose.prod.yml up -d --no-deps worker frontend nginx
-            
-            # Cleanup old images
             docker image prune -f
 
       - name: Smoke test
         run: |
           sleep 15
-          curl -f https://${{ vars.DOMAIN }}/v1/health || exit 1
-          echo "✅ Deployment successful!"
+          curl -f https://${{ vars.DOMAIN }}/v1/health
 
       - name: Notify Slack on success
         if: success()
         run: |
           curl -X POST ${{ secrets.SLACK_WEBHOOK }} \
             -H 'Content-type: application/json' \
-            -d '{"text":"✅ ProfCRM deployed successfully! SHA: ${{ github.sha }}"}'
+            -d '{"text":"ResearVia deployed successfully. SHA: ${{ github.sha }}"}'
 
       - name: Notify Slack on failure
         if: failure()
         run: |
           curl -X POST ${{ secrets.SLACK_WEBHOOK }} \
             -H 'Content-type: application/json' \
-            -d '{"text":"❌ ProfCRM deployment FAILED! SHA: ${{ github.sha }}"}'
+            -d '{"text":"ResearVia deployment failed. SHA: ${{ github.sha }}"}'

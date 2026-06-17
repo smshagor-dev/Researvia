@@ -42,6 +42,13 @@ export class ScholarshipsController {
     return this.scholarshipsService.findOne(id, user?.id);
   }
 
+  @Post(':id/unlock')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  async unlock(@Param('id') id: string, @CurrentUser('id') userId: string) {
+    return this.scholarshipsService.unlock(userId, id);
+  }
+
   @Post(':id/save')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()

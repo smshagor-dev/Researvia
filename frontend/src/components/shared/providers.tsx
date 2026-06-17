@@ -38,7 +38,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
       });
       caches?.keys?.().then((keys) => {
         keys
-          .filter((key) => key.startsWith('profcrm-static-'))
+          .filter((key) => key.startsWith('researvia-static-'))
           .forEach((key) => {
             caches.delete(key).catch(() => {
               // Ignore local cleanup failures.

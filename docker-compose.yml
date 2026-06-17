@@ -3,13 +3,13 @@ version: '3.9'
 services:
   mysql:
     image: mysql:8.0
-    container_name: profcrm_mysql
+    container_name: researvia_mysql
     restart: unless-stopped
     environment:
       MYSQL_ROOT_PASSWORD: rootpass123
-      MYSQL_DATABASE: profcrm_db
-      MYSQL_USER: profcrm
-      MYSQL_PASSWORD: profcrm_pass
+      MYSQL_DATABASE: researvia_db
+      MYSQL_USER: researvia
+      MYSQL_PASSWORD: researvia_pass
     ports:
       - "3306:3306"
     volumes:
@@ -24,7 +24,7 @@ services:
 
   redis:
     image: redis:7-alpine
-    container_name: profcrm_redis
+    container_name: researvia_redis
     restart: unless-stopped
     command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
     ports:
@@ -42,14 +42,14 @@ services:
       context: ./backend
       dockerfile: Dockerfile
       target: runner
-    container_name: profcrm_api
+    container_name: researvia_api
     restart: unless-stopped
     ports:
       - "3001:3001"
     environment:
       NODE_ENV: development
       PORT: 3001
-      DATABASE_URL: mysql://profcrm:profcrm_pass@mysql:3306/profcrm_db?connection_limit=10
+      DATABASE_URL: mysql://researvia:researvia_pass@mysql:3306/researvia_db?connection_limit=10
       REDIS_URL: redis://redis:6379
       JWT_SECRET: dev-jwt-secret-change-in-production-32chars
       JWT_ACCESS_EXPIRES: 15m
@@ -57,7 +57,7 @@ services:
       ENCRYPTION_KEY: 0123456789abcdef0123456789abcdef
       APP_URL: http://localhost:3001
       FRONTEND_URL: http://localhost:3000
-      OPENALEX_EMAIL: admin@profcrm.com
+      OPENALEX_EMAIL: ops@researvia.com
     depends_on:
       mysql:
         condition: service_healthy
@@ -73,7 +73,7 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-    container_name: profcrm_frontend
+    container_name: researvia_frontend
     restart: unless-stopped
     ports:
       - "3000:3000"
@@ -85,7 +85,7 @@ services:
 
   nginx:
     image: nginx:alpine
-    container_name: profcrm_nginx
+    container_name: researvia_nginx
     restart: unless-stopped
     ports:
       - "80:80"

@@ -105,6 +105,21 @@ export class AdminController {
     return this.adminService.updateMailSettings(body);
   }
 
+  @Get('system-settings')
+  async getSystemSettings(@Query('prefix') prefix?: string) {
+    return this.adminService.getSystemSettings(prefix);
+  }
+
+  @Post('system-settings')
+  async updateSystemSettings(@Body() body: any) {
+    return this.adminService.updateSystemSettings(body);
+  }
+
+  @Patch('system-settings/:key/delete')
+  async deleteSystemSetting(@Param('key') key: string) {
+    return this.adminService.deleteSystemSetting(key);
+  }
+
   @Post('imports')
   @UseInterceptors(FileInterceptor('file'))
   async createImport(@CurrentUser('id') uid: string, @Body() body: any, @UploadedFile() file?: Express.Multer.File) {

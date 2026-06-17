@@ -14,7 +14,7 @@ export function CTASection() {
           <Link href="/register" className="inline-flex items-center justify-center gap-2 rounded-md bg-white px-5 py-3 text-sm font-bold text-slate-950 transition hover:-translate-y-0.5 hover:bg-indigo-50">
             Get Started Free <ArrowRight className="h-4 w-4" aria-hidden="true" />
           </Link>
-          <a href="mailto:sales@profcrm.com?subject=ProfCRM%20Demo%20Request" className="inline-flex items-center justify-center rounded-md border border-white/25 bg-white/10 px-5 py-3 text-sm font-bold text-white transition hover:-translate-y-0.5 hover:bg-white/15">
+          <a href="mailto:sales@researvia.com?subject=ResearVia%20Demo%20Request" className="inline-flex items-center justify-center rounded-md border border-white/25 bg-white/10 px-5 py-3 text-sm font-bold text-white transition hover:-translate-y-0.5 hover:bg-white/15">
             Book a Demo
           </a>
         </div>

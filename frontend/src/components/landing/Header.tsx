@@ -40,11 +40,11 @@ export function Header() {
     <>
       <header className={`sticky top-0 z-50 border-b border-white/70 bg-white/75 backdrop-blur-xl transition-all dark:border-white/10 dark:bg-[#050816]/75 ${scrolled ? 'shadow-lg shadow-slate-950/5 dark:shadow-black/20' : ''}`}>
         <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
-          <Link href="/" className="flex items-center gap-2" aria-label="ProfCRM home">
+          <Link href="/" className="flex items-center gap-2" aria-label="ResearVia home">
             <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-indigo-600 to-blue-600 text-white shadow-lg shadow-indigo-600/20">
               <GraduationCap className="h-5 w-5" aria-hidden="true" />
             </span>
-            <span className="text-lg font-bold tracking-tight text-slate-950 dark:text-white">ProfCRM</span>
+            <span className="text-lg font-bold tracking-tight text-slate-950 dark:text-white">ResearVia</span>
           </Link>
 
           <nav className="hidden items-center gap-7 text-sm font-medium text-slate-600 dark:text-slate-300 lg:flex" aria-label="Primary navigation">

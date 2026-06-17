@@ -134,7 +134,7 @@ async function main() {
   const universityLimit = parseNumber(args.universities, 3);
   const perUniversity = parseNumber(args.perUniversity, 200);
   const publish = parseBoolean(args.publish, true);
-  const mailto = process.env.OPENALEX_EMAIL || 'admin@profcrm.com';
+  const mailto = process.env.OPENALEX_EMAIL || 'ops@researvia.com';
 
   const universities = await prisma.university.findMany({
     where: { status: 'active', openalexId: { not: null } },

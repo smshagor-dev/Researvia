@@ -4,6 +4,7 @@ import { PaginationService } from '../../shared/pagination/pagination.service';
 import { EmailAccountsService } from '../email-accounts/email-accounts.service';
 import { MailSettingsService } from '../email-accounts/mail-settings.service';
 import { StudentProfileService } from '../student-profile/student-profile.service';
+import { SystemSettingsService } from '../system-settings/system-settings.service';
 
 @Injectable()
 export class AdminService {
@@ -13,6 +14,7 @@ export class AdminService {
     private readonly emailAccounts: EmailAccountsService,
     private readonly mailSettings: MailSettingsService,
     private readonly studentProfiles: StudentProfileService,
+    private readonly systemSettings: SystemSettingsService,
   ) {}
 
   async getDashboardStats() {
@@ -131,6 +133,18 @@ export class AdminService {
   async updateMailSettings(data: any) {
     await this.mailSettings.updateSettings(data);
     return this.mailSettings.getPublicSettings();
+  }
+
+  async getSystemSettings(prefix?: string) {
+    return this.systemSettings.getAllResolved(prefix);
+  }
+
+  async updateSystemSettings(data: { items?: Array<{ key: string; value: unknown; description?: string | null }> }) {
+    return this.systemSettings.setMany(data.items || []);
+  }
+
+  async deleteSystemSetting(key: string) {
+    return this.systemSettings.remove(key);
   }
 
   async getStudents(page = 1, perPage = 20, search?: string) {

@@ -22,7 +22,7 @@ export function HeroSection() {
             Get <span className="bg-gradient-to-r from-indigo-600 via-purple-600 to-blue-600 bg-clip-text text-transparent">Your Dream Opportunity.</span>
           </h1>
           <p className="mt-6 max-w-2xl text-lg leading-8 text-slate-600">
-            ProfCRM helps ambitious students discover professors and scholarships, generate personalized AI emails, and track every academic conversation from first message to final response.
+            ResearVia helps students discover professors, scholarships, and research opportunities, then manage AI-assisted outreach from first draft to follow-up.
           </p>
           <div className="mt-8 flex flex-col gap-3 sm:flex-row">
             <Link href="/register" className="inline-flex items-center justify-center gap-2 rounded-md bg-gradient-to-r from-indigo-600 to-blue-600 px-5 py-3 text-sm font-bold text-white shadow-xl shadow-indigo-600/20 transition hover:-translate-y-0.5 hover:shadow-2xl hover:shadow-indigo-600/25">

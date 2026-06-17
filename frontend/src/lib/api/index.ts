@@ -129,6 +129,7 @@ export const adminProfessorsApi = {
 export const scholarshipsApi = {
   list: (params?: any) => api.get('/scholarships', { params }).then(unwrap),
   get: (id: string) => api.get(`/scholarships/${id}`).then(unwrap),
+  unlock: (id: string) => api.post(`/scholarships/${id}/unlock`).then(unwrap),
   save: (id: string, data?: any) => api.post(`/scholarships/${id}/save`, data || {}).then(unwrap),
   unsave: (id: string) => api.delete(`/scholarships/${id}/save`).then(unwrap),
   getSaved: (params?: any) => api.get('/scholarships/saved', { params }).then(unwrap),
@@ -138,6 +139,7 @@ export const scholarshipsApi = {
 export const opportunitiesApi = {
   list: (params?: any) => api.get('/opportunities', { params }).then(unwrap),
   get: (id: string) => api.get(`/opportunities/${id}`).then(unwrap),
+  unlock: (id: string) => api.post(`/opportunities/${id}/unlock`).then(unwrap),
   getDashboard: () => api.get('/dashboard/opportunities').then(unwrap),
 };
 
@@ -172,6 +174,8 @@ export const adminScholarshipsApi = {
   resync: (id: string) => api.post(`/admin/scholarships/${id}/resync`).then(unwrap),
   discover: (data?: any) => api.post('/admin/scholarships/sync/discover', data || {}).then(unwrap),
   syncDetails: (data?: any) => api.post('/admin/scholarships/sync/details', data || {}).then(unwrap),
+  syncDeadlines: () => api.post('/admin/scholarships/sync/deadlines').then(unwrap),
+  syncQuality: (data?: any) => api.post('/admin/scholarships/sync/quality', data || {}).then(unwrap),
 };
 
 // ─── Favorites ────────────────────────────────────────────────────────────────
@@ -314,6 +318,10 @@ export const adminApi = {
   resetMailboxPassword: (id: string) => api.patch(`/admin/mailboxes/${id}/reset-password`).then(unwrap),
   getMailSettings: () => api.get('/admin/mail-settings').then(unwrap),
   updateMailSettings: (data: any) => api.post('/admin/mail-settings', data).then(unwrap),
+  getSystemSettings: (prefix?: string) => api.get('/admin/system-settings', { params: prefix ? { prefix } : undefined }).then(unwrap),
+  updateSystemSettings: (items: Array<{ key: string; value: unknown; description?: string | null }>) =>
+    api.post('/admin/system-settings', { items }).then(unwrap),
+  deleteSystemSetting: (key: string) => api.patch(`/admin/system-settings/${encodeURIComponent(key)}/delete`).then(unwrap),
 };
 
 export const adminMatchesApi = {
@@ -325,10 +333,14 @@ export const adminMatchesApi = {
 export const billingApi = {
   get: () => api.get('/billing').then(unwrap),
   checkout: (data: any) => api.post('/billing/checkout', data).then(unwrap),
+  getPaymentMethods: () => api.get('/billing/payment-methods').then(unwrap),
+  getPromotions: () => api.get('/billing/promotions').then(unwrap),
+  createNowPayment: (data: any) => api.post('/billing/nowpayments/create', data).then(unwrap),
   portal: () => api.post('/billing/portal').then(unwrap),
+  cancel: () => api.delete('/subscriptions/cancel').then(unwrap),
   invoices: () => api.get('/billing/invoices').then(unwrap),
   usage: () => api.get('/billing/usage').then(unwrap),
-  applyCoupon: (code: string) => api.post('/billing/coupons/apply', { code }).then(unwrap),
+  applyCoupon: (code: string, planSlug?: string) => api.post('/billing/coupons/apply', { code, planSlug }).then(unwrap),
 };
 
 export const adminBillingApi = {
@@ -337,4 +349,8 @@ export const adminBillingApi = {
   getRevenue: () => api.get('/admin/billing/revenue').then(unwrap),
   getCoupons: () => api.get('/admin/billing/coupons').then(unwrap),
   createCoupon: (data: any) => api.post('/admin/billing/coupons', data).then(unwrap),
+  updateCoupon: (id: string, data: any) => api.patch(`/admin/billing/coupons/${id}`, data).then(unwrap),
+  getPlans: () => api.get('/admin/billing/plans').then(unwrap),
+  createPlan: (data: any) => api.post('/admin/billing/plans', data).then(unwrap),
+  updatePlan: (id: string, data: any) => api.patch(`/admin/billing/plans/${id}`, data).then(unwrap),
 };

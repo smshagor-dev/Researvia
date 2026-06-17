@@ -208,7 +208,7 @@ async function main() {
 
   const passwordHash = await bcrypt.hash('1234567890', 12);
   const existingRequestedAdmin = await prisma.user.findUnique({ where: { email: 'support@smshagor.com' } });
-  const legacyAdmin = await prisma.user.findUnique({ where: { email: 'admin@profcrm.com' } });
+  const legacyAdmin = await prisma.user.findUnique({ where: { email: 'admin@researvia.com' } });
 
   if (!existingRequestedAdmin && legacyAdmin) {
     await prisma.user.update({

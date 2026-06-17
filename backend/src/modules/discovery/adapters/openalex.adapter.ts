@@ -10,6 +10,7 @@ import type {
   SourcePublicationCandidate,
 } from '../../professor-sync/professor-sync.types';
 import { sleep } from '../utils/normalize.util';
+import { SystemSettingsService } from '../../system-settings/system-settings.service';
 
 type OpenAlexAuthor = {
   id: string;
@@ -39,7 +40,10 @@ export class OpenAlexAdapter implements AcademicSourceAdapter {
   private readonly logger = new Logger(OpenAlexAdapter.name);
   private readonly client: AxiosInstance;
 
-  constructor(private readonly config: ConfigService) {
+  constructor(
+    private readonly config: ConfigService,
+    private readonly systemSettings: SystemSettingsService,
+  ) {
     this.client = axios.create({
       baseURL: this.config.get<string>('OPENALEX_BASE_URL', 'https://api.openalex.org'),
       timeout: 10000,
@@ -57,6 +61,8 @@ export class OpenAlexAdapter implements AcademicSourceAdapter {
     await sleep(200);
 
     const filters = [`last_known_institutions.id:${params.university.openalexId}`];
+    const mailto = await this.systemSettings.getString('discovery.openalex.mailto')
+      || this.config.get<string>('OPENALEX_EMAIL');
 
     try {
       const response = await this.client.get('/authors', {
@@ -64,7 +70,7 @@ export class OpenAlexAdapter implements AcademicSourceAdapter {
           filter: filters.join(','),
           per_page: params.limit ?? 10,
           search: params.researchArea.name,
-          mailto: this.config.get<string>('OPENALEX_EMAIL'),
+          mailto,
         },
       });
 
@@ -82,10 +88,12 @@ export class OpenAlexAdapter implements AcademicSourceAdapter {
     }
 
     await sleep(200);
+    const mailto = await this.systemSettings.getString('discovery.openalex.mailto')
+      || this.config.get<string>('OPENALEX_EMAIL');
 
     try {
       const authorResponse = await this.client.get(`/authors/${encodeURIComponent(externalId)}`, {
-        params: { mailto: this.config.get<string>('OPENALEX_EMAIL') },
+        params: { mailto },
       });
 
       const worksResponse = await this.client.get('/works', {
@@ -93,7 +101,7 @@ export class OpenAlexAdapter implements AcademicSourceAdapter {
           filter: `author.id:${externalId}`,
           per_page: 20,
           sort: 'publication_date:desc',
-          mailto: this.config.get<string>('OPENALEX_EMAIL'),
+          mailto,
         },
       });
 

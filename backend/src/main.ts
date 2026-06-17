@@ -106,8 +106,8 @@ async function bootstrap() {
   );
 
   const config = new DocumentBuilder()
-    .setTitle('ProfCRM API')
-    .setDescription('Professor Outreach, Scholarship & Research CRM Platform')
+    .setTitle('ResearVia API')
+    .setDescription('Academic outreach, scholarship discovery, and research opportunity platform')
     .setVersion('1.0')
     .addBearerAuth()
     .addServer(process.env.APP_URL || 'http://localhost:3001', 'API Server')
@@ -121,7 +121,7 @@ async function bootstrap() {
   const port = process.env.PORT || 3001;
   app.enableShutdownHooks();
   await app.listen(port);
-  console.log(`🚀 ProfCRM API running on http://localhost:${port}/v1`);
+  console.log(`ResearVia API running on http://localhost:${port}/v1`);
   console.log(`📚 Swagger docs: http://localhost:${port}/api/docs`);
 }
 

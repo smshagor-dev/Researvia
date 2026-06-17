@@ -48,7 +48,7 @@ export const useAuthStore = create<AuthStore>()(
         })),
     }),
     {
-      name: 'profcrm-auth',
+      name: 'researvia-auth',
       partialize: (state) => ({ user: state.user, isAuthenticated: state.isAuthenticated }),
       skipHydration: true,
       onRehydrateStorage: () => (state) => {

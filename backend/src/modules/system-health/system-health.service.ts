@@ -35,7 +35,7 @@ export class SystemHealthService {
   }
 
   async getHealth() {
-    const [database, redis, storage, stripe, smtp, aiProviders, workers, queues, lastSuccessfulJob, lastFailedJob] = await Promise.all([
+    const [database, redis, storage, stripe, smtp, aiProviders, workers, queues, lastSuccessfulJobAt, lastFailedJobAt] = await Promise.all([
       this.getDatabaseStatus(),
       this.getRedisStatus(),
       this.getStorageStatus(),
@@ -44,14 +44,8 @@ export class SystemHealthService {
       this.getAiProviderStatus(),
       this.getWorkers(),
       this.getQueues(),
-      this.prisma.syncLog.findFirst({
-        where: { status: { in: [SyncLogStatus.completed, SyncLogStatus.partial] } },
-        orderBy: { completedAt: 'desc' },
-      }),
-      this.prisma.syncLog.findFirst({
-        where: { status: SyncLogStatus.failed },
-        orderBy: { failedAt: 'desc' },
-      }),
+      this.getLastSuccessfulSyncAt(),
+      this.getLastFailedSyncAt(),
     ]);
 
     const stuckByQueue = queues.map((queue) => ({
@@ -137,8 +131,8 @@ export class SystemHealthService {
         failedByQueue,
       }),
       metrics: this.buildMetricsSummary(queues, workers),
-      lastSuccessfulJobAt: lastSuccessfulJob?.completedAt || null,
-      lastFailedJobAt: lastFailedJob?.failedAt || null,
+      lastSuccessfulJobAt,
+      lastFailedJobAt,
       recommendations: this.buildRecommendations({
         redisStatus: redis.status,
         workers,
@@ -258,6 +252,30 @@ export class SystemHealthService {
       openai: { status: process.env.OPENAI_API_KEY ? 'healthy' : 'not_configured' },
       anthropic: { status: process.env.ANTHROPIC_API_KEY ? 'healthy' : 'not_configured' },
     };
+  }
+
+  private async getLastSuccessfulSyncAt() {
+    try {
+      const result = await this.prisma.syncLog.aggregate({
+        where: { status: { in: [SyncLogStatus.completed, SyncLogStatus.partial] } },
+        _max: { completedAt: true },
+      });
+      return result._max.completedAt || null;
+    } catch {
+      return null;
+    }
+  }
+
+  private async getLastFailedSyncAt() {
+    try {
+      const result = await this.prisma.syncLog.aggregate({
+        where: { status: SyncLogStatus.failed },
+        _max: { failedAt: true },
+      });
+      return result._max.failedAt || null;
+    } catch {
+      return null;
+    }
   }
 
   private toWorkerSnapshot(queueName: MonitoredQueueName, row?: WorkerHeartbeat) {

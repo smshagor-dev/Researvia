@@ -8,25 +8,25 @@ export class ScholarshipCronService {
 
   constructor(private readonly scholarshipDiscovery: ScholarshipDiscoveryService) {}
 
-  @Cron(process.env.SCHOLARSHIP_DISCOVERY_CRON || '0 1 * * *')
+  @Cron(process.env.SCHOLARSHIP_DISCOVERY_CRON || '0 */12 * * *')
   async enqueueDiscovery() {
     const result = await this.scholarshipDiscovery.queueDiscovery('system-cron');
     this.logger.log(`Queued scholarship discovery job ${result.jobId}`);
   }
 
-  @Cron(process.env.SCHOLARSHIP_SYNC_CRON || '0 2 * * *')
+  @Cron(process.env.SCHOLARSHIP_SYNC_CRON || '10 */12 * * *')
   async enqueueSync() {
     const result = await this.scholarshipDiscovery.queueDetailsSync('system-cron');
     this.logger.log(`Queued scholarship sync job ${result.jobId}`);
   }
 
-  @Cron(process.env.SCHOLARSHIP_DEADLINE_CRON || '0 3 * * *')
+  @Cron(process.env.SCHOLARSHIP_DEADLINE_CRON || '20 */12 * * *')
   async enqueueDeadlineCheck() {
     const result = await this.scholarshipDiscovery.queueDeadlineCheck('system-cron');
     this.logger.log(`Queued scholarship deadline check job ${result.jobId}`);
   }
 
-  @Cron(process.env.SCHOLARSHIP_QUALITY_CRON || '0 4 * * *')
+  @Cron(process.env.SCHOLARSHIP_QUALITY_CRON || '30 */12 * * *')
   async enqueueQualityScore() {
     const result = await this.scholarshipDiscovery.queueQualityScore('system-cron');
     this.logger.log(`Queued scholarship quality score job ${result.jobId}`);

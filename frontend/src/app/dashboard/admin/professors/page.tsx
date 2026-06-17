@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import { Loader2, RefreshCcw, Search, Sparkles } from 'lucide-react';
 import {
@@ -38,6 +39,7 @@ const sourceOptions = ['openalex', 'orcid', 'crossref', 'ror', 'manual', 'import
 
 export default function AdminProfessorsPage() {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const [selectedUniversityId, setSelectedUniversityId] = useState('');
   const [selectedUniversityName, setSelectedUniversityName] = useState('');
   const [query, setQuery] = useState('');
@@ -69,11 +71,6 @@ export default function AdminProfessorsPage() {
     [hasEmail, page, query, selectedUniversityId, verificationStatus],
   );
 
-  const { data, isLoading, isFetching } = useAdminProfessors(params);
-  const detailQuery = useAdminProfessor(selectedId);
-  const updateProfessor = useAdminProfessorUpdate();
-  const resyncProfessor = useAdminProfessorResync();
-  const discoverProfessorEmails = useAdminProfessorEmailDiscovery();
   const syncJobsQuery = useAdminSyncJobs();
   const syncLogsQuery = useAdminSyncLogs({ page: syncLogsPage, pageSize: 3 });
   const runDiscoverySync = useRunDiscoverySync();
@@ -81,13 +78,34 @@ export default function AdminProfessorsPage() {
   const runPublicationSync = useRunPublicationSync();
   const runDeduplication = useRunDeduplication();
 
-  const rows = (((data as any)?.data || []) as AdminProfessorRow[]);
-  const meta = (data as any)?.meta || {};
-  const detail = detailQuery.data as any;
   const syncJobs = (syncJobsQuery.data as any[]) || [];
   const syncLogsData = (syncLogsQuery.data as any) || {};
   const syncLogs = (syncLogsData.data || []) as any[];
   const syncLogsMeta = syncLogsData.meta || {};
+  const discoveryQueue = syncJobs.find((queue: any) => queue.queueName === 'professor-discovery');
+  const profileQueue = syncJobs.find((queue: any) => queue.queueName === 'professor-profile-sync');
+  const hasDiscoveryBacklog =
+    Number(discoveryQueue?.counts?.active || 0) +
+      Number(discoveryQueue?.counts?.waiting || 0) +
+      Number(discoveryQueue?.counts?.delayed || 0) >
+    0;
+  const hasProfileBacklog =
+    Number(profileQueue?.counts?.active || 0) +
+      Number(profileQueue?.counts?.waiting || 0) +
+      Number(profileQueue?.counts?.delayed || 0) >
+    0;
+  const shouldPollProfessors =
+    hasDiscoveryBacklog || hasProfileBacklog || runDiscoverySync.isPending || runProfileSync.isPending;
+  const { data, isLoading, isFetching } = useAdminProfessors(params, {
+    refetchInterval: shouldPollProfessors ? 10000 : false,
+  });
+  const detailQuery = useAdminProfessor(selectedId);
+  const updateProfessor = useAdminProfessorUpdate();
+  const resyncProfessor = useAdminProfessorResync();
+  const discoverProfessorEmails = useAdminProfessorEmailDiscovery();
+  const rows = (((data as any)?.data || []) as AdminProfessorRow[]);
+  const meta = (data as any)?.meta || {};
+  const detail = detailQuery.data as any;
   const jobCounts = syncJobs.reduce(
     (acc, queue) => {
       acc.running += Number(queue?.counts?.active || 0);
@@ -98,6 +116,11 @@ export default function AdminProfessorsPage() {
     { running: 0, failed: 0, waiting: 0 },
   );
   const lastSyncTime = syncLogs.find((log) => log.completedAt || log.createdAt)?.completedAt || syncLogs[0]?.createdAt || null;
+  const activeSyncMessage = hasDiscoveryBacklog
+    ? `Professor loading is in progress. ${Number(discoveryQueue?.counts?.active || 0)} running and ${Number(discoveryQueue?.counts?.waiting || 0)} queued job(s).`
+    : hasProfileBacklog
+      ? `Profile sync is processing. ${Number(profileQueue?.counts?.active || 0)} running and ${Number(profileQueue?.counts?.waiting || 0)} queued job(s).`
+      : null;
 
   useEffect(() => {
     if (!detail || !editMode) return;
@@ -120,6 +143,12 @@ export default function AdminProfessorsPage() {
     setSelectedUniversityId(params.get('university') || '');
     setSelectedUniversityName(params.get('universityName') || '');
   }, []);
+
+  useEffect(() => {
+    if (!shouldPollProfessors) return;
+
+    queryClient.invalidateQueries({ queryKey: ['admin-professors'] });
+  }, [queryClient, shouldPollProfessors, syncJobsQuery.dataUpdatedAt, syncLogsQuery.dataUpdatedAt]);
 
   const openModal = (id: string, mode: 'view' | 'edit') => {
     setSelectedId(id);
@@ -235,18 +264,18 @@ export default function AdminProfessorsPage() {
             <button
               type="button"
               onClick={() => runDiscoverySync.mutate({})}
-              disabled={runDiscoverySync.isPending}
+              disabled={runDiscoverySync.isPending || hasDiscoveryBacklog}
               className="rounded-xl bg-sky-600 px-4 py-2 text-sm font-medium text-white shadow-sm shadow-sky-900/15 transition hover:bg-sky-500 disabled:opacity-50 dark:bg-sky-500 dark:text-slate-950 dark:hover:bg-sky-400"
             >
-              {runDiscoverySync.isPending ? 'Queueing...' : 'Load Professors'}
+              {runDiscoverySync.isPending ? 'Queueing...' : hasDiscoveryBacklog ? 'Loading queued...' : 'Load Professors'}
             </button>
             <button
               type="button"
               onClick={() => runProfileSync.mutate()}
-              disabled={runProfileSync.isPending}
+              disabled={runProfileSync.isPending || hasProfileBacklog}
               className="rounded-xl border border-sky-200 bg-white px-4 py-2 text-sm font-medium text-sky-700 transition hover:bg-sky-50 disabled:opacity-50 dark:border-sky-400/20 dark:bg-white/5 dark:text-sky-200 dark:hover:bg-white/10"
             >
-              {runProfileSync.isPending ? 'Queueing...' : 'Run Profile Sync'}
+              {runProfileSync.isPending ? 'Queueing...' : hasProfileBacklog ? 'Profile Sync Running...' : 'Run Profile Sync'}
             </button>
             <button
               type="button"
@@ -273,6 +302,12 @@ export default function AdminProfessorsPage() {
             <p className="mt-2 text-lg font-semibold text-gray-900 dark:text-white">
               {lastSyncTime ? new Date(lastSyncTime).toLocaleString() : 'No sync yet'}
             </p>
+            {activeSyncMessage ? (
+              <div className="mt-3 inline-flex items-center gap-2 rounded-full bg-amber-100 px-3 py-1 text-xs font-medium text-amber-800 dark:bg-amber-500/15 dark:text-amber-200">
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                {activeSyncMessage}
+              </div>
+            ) : null}
           </div>
           <div className="grid grid-cols-3 gap-3">
             <div className="rounded-2xl border border-gray-100 bg-white p-4 dark:border-white/10 dark:bg-white/5">
@@ -390,6 +425,12 @@ export default function AdminProfessorsPage() {
         </div>
       ) : (
         <div className="space-y-4">
+          {activeSyncMessage ? (
+            <div className="flex items-center gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-100">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              <span>{activeSyncMessage} Total records and visible rows will refresh automatically.</span>
+            </div>
+          ) : null}
           <div className="overflow-hidden rounded-xl border border-gray-100 bg-white">
             <table className="w-full text-left text-sm">
               <thead className="border-b border-gray-100 bg-gray-50 text-xs uppercase text-gray-500">

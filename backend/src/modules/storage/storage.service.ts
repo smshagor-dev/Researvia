@@ -7,6 +7,7 @@ import {
   DeleteObjectCommand, HeadObjectCommand,
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import { SystemSettingsService } from '../system-settings/system-settings.service';
 
 @Injectable()
 export class StorageService {
@@ -16,12 +17,15 @@ export class StorageService {
   private readonly driver: 'local' | 's3' | 'r2';
   private readonly useLocalFallback: boolean;
 
-  constructor(private readonly config: ConfigService) {
+  constructor(
+    private readonly config: ConfigService,
+    private readonly systemSettings: SystemSettingsService,
+  ) {
     const endpoint = this.config.get<string>('S3_ENDPOINT');
     const accessKeyId = this.config.get<string>('S3_ACCESS_KEY_ID');
     this.driver = (this.config.get<string>('STORAGE_DRIVER', 'local') as 'local' | 's3' | 'r2');
 
-    this.bucket = this.config.get<string>('S3_BUCKET', 'profcrm');
+    this.bucket = this.config.get<string>('S3_BUCKET', 'researvia');
     this.useLocalFallback = this.driver === 'local' || (!endpoint && !accessKeyId);
 
     if (!this.useLocalFallback) {
@@ -43,7 +47,7 @@ export class StorageService {
       await mkdir(dirname(fullPath), { recursive: true });
       await writeFile(fullPath, body);
       this.logger.debug(`[LocalStorage] Saved upload: ${fullPath} (${contentType})`);
-      return `${this.config.get('APP_URL', 'http://localhost:3001')}/uploads/${key}`;
+      return `${await this.resolveAppBaseUrl()}/uploads/${key}`;
     }
 
     await this.s3!.send(new PutObjectCommand({
@@ -55,14 +59,14 @@ export class StorageService {
 
     const endpoint = this.config.get<string>('S3_ENDPOINT');
     if (endpoint) {
-      return `${endpoint}/${this.bucket}/${key}`;
+      return `${await this.resolvePublicStorageBaseUrl(endpoint)}/${this.bucket}/${key}`;
     }
     return `https://${this.bucket}.s3.amazonaws.com/${key}`;
   }
 
   async getSignedUrl(key: string, expiresIn = 3600): Promise<string> {
     if (this.useLocalFallback) {
-      return `${this.config.get('APP_URL', 'http://localhost:3001')}/uploads/${key}`;
+      return `${await this.resolveAppBaseUrl()}/uploads/${key}`;
     }
 
     const command = new GetObjectCommand({ Bucket: this.bucket, Key: key });
@@ -99,5 +103,15 @@ export class StorageService {
     }
 
     return { status: 'healthy', driver: this.driver };
+  }
+
+  private async resolveAppBaseUrl() {
+    return await this.systemSettings.getString('app.public_backend_url')
+      || this.config.get('APP_URL', 'http://localhost:3001');
+  }
+
+  private async resolvePublicStorageBaseUrl(endpoint: string) {
+    return await this.systemSettings.getString('storage.public_base_url')
+      || endpoint.replace(/\/$/, '');
   }
 }

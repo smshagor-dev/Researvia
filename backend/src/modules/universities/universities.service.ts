@@ -191,7 +191,7 @@ export class UniversitiesService {
       let cursor = '*';
 
       while (cursor) {
-        const payload = await this.fetchInstitutions(cursor, 200, process.env.OPENALEX_EMAIL || 'admin@profcrm.com');
+        const payload = await this.fetchInstitutions(cursor, 200, process.env.OPENALEX_EMAIL || 'ops@researvia.com');
         const rows = Array.isArray(payload.results) ? payload.results : [];
 
         if (rows.length === 0) {

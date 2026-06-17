@@ -1,4 +1,4 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, OnModuleInit } from '@nestjs/common';
 import {
   AcceptingStudents,
   ApplicationStatus,
@@ -34,7 +34,7 @@ import {
 import { OpportunitiesService } from './opportunities.service';
 
 @Injectable()
-export class OpportunityDiscoveryService {
+export class OpportunityDiscoveryService implements OnModuleInit {
   private readonly logger = new Logger(OpportunityDiscoveryService.name);
 
   constructor(
@@ -46,107 +46,32 @@ export class OpportunityDiscoveryService {
     private readonly opportunities: OpportunitiesService,
   ) {}
 
+  async onModuleInit() {
+    if (process.env.NODE_ENV === 'test') {
+      return;
+    }
+
+    const total = await this.prisma.opportunity.count();
+    if (total >= 5) {
+      return;
+    }
+
+    const counters = await this.populateOpportunityCatalog(150, 200);
+    this.logger.log(
+      `Opportunity catalog ensured with ${counters.createdCount + counters.updatedCount} generated entries.`,
+    );
+  }
+
   async runDiscovery(job: Job<OpportunityDiscoveryJobData>) {
     const counters = this.createCounters();
     await this.syncLogs.markRunning(String(job.id));
 
     try {
-      const [professors, scholarships] = await Promise.all([
-        this.prisma.professor.findMany({
-          where: {
-            status: 'active',
-            verificationStatus: 'verified',
-            OR: [
-              { acceptingStudents: AcceptingStudents.yes },
-              { fundingStatus: FundingStatus.funded },
-            ],
-          },
-          include: {
-            university: true,
-            department: true,
-          },
-          take: 300,
-        }),
-        this.prisma.scholarship.findMany({
-          where: {
-            status: ScholarshipStatus.active,
-            verificationStatus: ScholarshipVerificationStatus.verified,
-          },
-          include: {
-            university: true,
-            country: true,
-          },
-          take: 200,
-        }),
-      ]);
-
-      for (const professor of professors) {
-        const input: DiscoveredOpportunityInput = {
-          title: `${professor.fullName} ${professor.fundingStatus === FundingStatus.funded ? 'Funded' : 'Open'} ${professor.position === 'postdoc' ? 'Postdoc' : 'PhD Position'}`,
-          type: professor.position === 'postdoc' ? OpportunityType.postdoc : OpportunityType.phd_position,
-          countryId: professor.university.countryId,
-          universityId: professor.universityId,
-          departmentId: professor.departmentId,
-          professorId: professor.id,
-          fundingAmount: professor.fundingStatus === FundingStatus.funded ? 25000 : null,
-          currency: professor.fundingStatus === FundingStatus.funded ? 'USD' : null,
-          isFullyFunded: professor.fundingStatus === FundingStatus.funded,
-          description: professor.bio || `Research opening in ${professor.department?.name || professor.university.name}.`,
-          requirements: 'Updated CV, unofficial transcript, concise research interests statement, and contact availability.',
-          deadline: this.daysFromNow(90),
-          officialUrl: professor.facultyPageUrl || professor.labUrl || professor.personalWebsite || professor.university.websiteUrl,
-          sourceUrl: professor.facultyPageUrl || professor.university.websiteUrl,
-          verificationStatus: OpportunityVerificationStatus.verified,
-          status: OpportunityStatus.active,
-        };
-
-        const saved = await this.upsertOpportunity(input);
-        counters.processedCount += 1;
-        counters.updatedCount += 1;
-
-        const qualityJob = await this.queues.enqueueOpportunityQualityScore({
-          triggeredBy: job.data.triggeredBy,
-          opportunityId: saved.id,
-        });
-        await this.syncLogs.createQueuedLog({
-          jobId: String(qualityJob.id),
-          queueName: OPPORTUNITY_QUALITY_SCORE_QUEUE,
-          jobName: OPPORTUNITY_QUALITY_SCORE_JOB,
-          metadataJson: toPrismaJsonValue({ opportunityId: saved.id }),
-        });
-      }
-
-      for (const scholarship of scholarships) {
-        const type =
-          scholarship.fundingType === 'exchange'
-            ? OpportunityType.exchange_program
-            : scholarship.fundingType === 'grant'
-              ? OpportunityType.research_grant
-              : scholarship.fundingType === 'fellowship'
-                ? OpportunityType.fellowship
-                : scholarship.fundingType === 'internship'
-                  ? OpportunityType.research_internship
-                  : OpportunityType.lab_position;
-
-        await this.upsertOpportunity({
-          title: scholarship.title,
-          type,
-          countryId: scholarship.countryId,
-          universityId: scholarship.universityId,
-          fundingAmount: scholarship.fundingAmount ? Number(scholarship.fundingAmount) : null,
-          currency: scholarship.currency,
-          isFullyFunded: scholarship.isFullyFunded,
-          description: scholarship.description || scholarship.eligibilityCriteria,
-          requirements: scholarship.eligibilityCriteria,
-          deadline: scholarship.deadline,
-          officialUrl: scholarship.applicationUrl || scholarship.officialSourceUrl || scholarship.officialUrl,
-          sourceUrl: scholarship.sourceUrl || scholarship.officialSourceUrl,
-          verificationStatus: OpportunityVerificationStatus.verified,
-          status: scholarship.deadline && scholarship.deadline.getTime() < Date.now() ? OpportunityStatus.expired : OpportunityStatus.active,
-        });
-        counters.processedCount += 1;
-        counters.createdCount += 1;
-      }
+      const populated = await this.populateOpportunityCatalog(300, 200, job.data.triggeredBy);
+      counters.processedCount = populated.processedCount;
+      counters.createdCount = populated.createdCount;
+      counters.updatedCount = populated.updatedCount;
+      counters.skippedCount = populated.skippedCount;
 
       await this.syncLogs.markCompleted(String(job.id), counters);
       return counters;
@@ -286,6 +211,11 @@ export class OpportunityDiscoveryService {
   }
 
   async queueDiscovery(triggeredBy: string) {
+    const pendingJob = await this.queues.findFirstPendingJob(OPPORTUNITY_DISCOVERY_QUEUE);
+    if (pendingJob) {
+      return { jobId: pendingJob.id, status: pendingJob.state };
+    }
+
     const job = await this.queues.enqueueOpportunityDiscovery({ triggeredBy });
     await this.syncLogs.createQueuedLog({
       jobId: String(job.id),
@@ -297,6 +227,13 @@ export class OpportunityDiscoveryService {
   }
 
   async queueSync(triggeredBy: string, opportunityId?: string) {
+    if (!opportunityId) {
+      const pendingJob = await this.queues.findFirstPendingJob(OPPORTUNITY_SYNC_QUEUE);
+      if (pendingJob) {
+        return { jobId: pendingJob.id, status: pendingJob.state };
+      }
+    }
+
     const job = await this.queues.enqueueOpportunitySync({ triggeredBy, opportunityId });
     await this.syncLogs.createQueuedLog({
       jobId: String(job.id),
@@ -308,6 +245,13 @@ export class OpportunityDiscoveryService {
   }
 
   async queueQualityScore(triggeredBy: string, opportunityId?: string) {
+    if (!opportunityId) {
+      const pendingJob = await this.queues.findFirstPendingJob(OPPORTUNITY_QUALITY_SCORE_QUEUE);
+      if (pendingJob) {
+        return { jobId: pendingJob.id, status: pendingJob.state };
+      }
+    }
+
     const job = await this.queues.enqueueOpportunityQualityScore({ triggeredBy, opportunityId });
     await this.syncLogs.createQueuedLog({
       jobId: String(job.id),
@@ -360,6 +304,159 @@ export class OpportunityDiscoveryService {
           data,
         })
       : this.prisma.opportunity.create({ data });
+  }
+
+  private async populateOpportunityCatalog(
+    professorLimit: number,
+    scholarshipLimit: number,
+    triggeredBy = 'system-bootstrap',
+  ) {
+    const counters = this.createCounters();
+    const [professors, scholarships] = await Promise.all([
+      this.prisma.professor.findMany({
+        where: {
+          status: 'active',
+          isPublic: true,
+          verificationStatus: 'verified',
+          OR: [
+            { acceptingStudents: AcceptingStudents.yes },
+            { fundingStatus: FundingStatus.funded },
+            { researchAreas: { some: {} } },
+          ],
+        },
+        include: {
+          university: true,
+          department: true,
+        },
+        take: professorLimit,
+      }),
+      this.prisma.scholarship.findMany({
+        where: {
+          status: ScholarshipStatus.active,
+          verificationStatus: ScholarshipVerificationStatus.verified,
+        },
+        include: {
+          university: true,
+          country: true,
+        },
+        take: scholarshipLimit,
+      }),
+    ]);
+
+    for (const professor of professors) {
+      const saved = await this.upsertOpportunity(this.buildProfessorOpportunityInput(professor));
+      counters.processedCount += 1;
+      if (saved.createdAt.getTime() === saved.updatedAt.getTime()) {
+        counters.createdCount += 1;
+      } else {
+        counters.updatedCount += 1;
+      }
+
+      const qualityJob = await this.queues.enqueueOpportunityQualityScore({
+        triggeredBy,
+        opportunityId: saved.id,
+      });
+      await this.syncLogs.createQueuedLog({
+        jobId: String(qualityJob.id),
+        queueName: OPPORTUNITY_QUALITY_SCORE_QUEUE,
+        jobName: OPPORTUNITY_QUALITY_SCORE_JOB,
+        metadataJson: toPrismaJsonValue({ opportunityId: saved.id }),
+      });
+    }
+
+    for (const scholarship of scholarships) {
+      const saved = await this.upsertOpportunity(this.buildScholarshipOpportunityInput(scholarship));
+      counters.processedCount += 1;
+      if (saved.createdAt.getTime() === saved.updatedAt.getTime()) {
+        counters.createdCount += 1;
+      } else {
+        counters.updatedCount += 1;
+      }
+    }
+
+    return counters;
+  }
+
+  private buildProfessorOpportunityInput(professor: {
+    id: string;
+    fullName: string;
+    position: string | null;
+    fundingStatus: FundingStatus;
+    bio: string | null;
+    universityId: string;
+    departmentId: string | null;
+    facultyPageUrl: string | null;
+    labUrl: string | null;
+    personalWebsite: string | null;
+    university: { countryId: string | null; name: string; websiteUrl: string | null };
+    department: { name: string } | null;
+  }): DiscoveredOpportunityInput {
+    return {
+      title: `${professor.fullName} ${professor.fundingStatus === FundingStatus.funded ? 'Funded' : 'Open'} ${professor.position === 'postdoc' ? 'Postdoc' : 'PhD Position'}`,
+      type: professor.position === 'postdoc' ? OpportunityType.postdoc : OpportunityType.phd_position,
+      countryId: professor.university.countryId,
+      universityId: professor.universityId,
+      departmentId: professor.departmentId,
+      professorId: professor.id,
+      fundingAmount: professor.fundingStatus === FundingStatus.funded ? 25000 : null,
+      currency: professor.fundingStatus === FundingStatus.funded ? 'USD' : null,
+      isFullyFunded: professor.fundingStatus === FundingStatus.funded,
+      description: professor.bio || `Research opening in ${professor.department?.name || professor.university.name}.`,
+      requirements: 'Updated CV, unofficial transcript, concise research interests statement, and contact availability.',
+      deadline: this.daysFromNow(90),
+      officialUrl: professor.facultyPageUrl || professor.labUrl || professor.personalWebsite || professor.university.websiteUrl,
+      sourceUrl: professor.facultyPageUrl || professor.university.websiteUrl,
+      verificationStatus: OpportunityVerificationStatus.verified,
+      status: OpportunityStatus.active,
+    };
+  }
+
+  private buildScholarshipOpportunityInput(scholarship: {
+    title: string;
+    fundingType: string | null;
+    countryId: string | null;
+    universityId: string | null;
+    fundingAmount: Prisma.Decimal | number | null;
+    currency: string | null;
+    isFullyFunded: boolean;
+    description: string | null;
+    eligibilityCriteria: string | null;
+    deadline: Date | null;
+    applicationUrl: string | null;
+    officialSourceUrl: string | null;
+    officialUrl: string | null;
+    sourceUrl: string | null;
+  }): DiscoveredOpportunityInput {
+    const type =
+      scholarship.fundingType === 'exchange'
+        ? OpportunityType.exchange_program
+        : scholarship.fundingType === 'grant'
+          ? OpportunityType.research_grant
+          : scholarship.fundingType === 'fellowship'
+            ? OpportunityType.fellowship
+            : scholarship.fundingType === 'internship'
+              ? OpportunityType.research_internship
+              : OpportunityType.lab_position;
+
+    return {
+      title: scholarship.title,
+      type,
+      countryId: scholarship.countryId,
+      universityId: scholarship.universityId,
+      fundingAmount: scholarship.fundingAmount ? Number(scholarship.fundingAmount) : null,
+      currency: scholarship.currency,
+      isFullyFunded: scholarship.isFullyFunded,
+      description: scholarship.description || scholarship.eligibilityCriteria,
+      requirements: scholarship.eligibilityCriteria,
+      deadline: scholarship.deadline,
+      officialUrl: scholarship.applicationUrl || scholarship.officialSourceUrl || scholarship.officialUrl,
+      sourceUrl: scholarship.sourceUrl || scholarship.officialSourceUrl,
+      verificationStatus: OpportunityVerificationStatus.verified,
+      status:
+        scholarship.deadline && scholarship.deadline.getTime() < Date.now()
+          ? OpportunityStatus.expired
+          : OpportunityStatus.active,
+    };
   }
 
   private async enqueueDeadlineNotification(userId: string, opportunityId: string, title: string, daysLeft: number) {

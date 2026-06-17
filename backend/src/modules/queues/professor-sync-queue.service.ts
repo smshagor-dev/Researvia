@@ -331,13 +331,13 @@ export class ProfessorSyncQueueService {
       queue.getJobCounts('active', 'completed', 'delayed', 'failed', 'waiting'),
       queue.getJobs(['active', 'waiting', 'delayed', 'failed', 'completed'], 0, 9, true),
       this.getStuckJobs(queueName),
-      this.prisma.syncLog.findFirst({
+      this.prisma.syncLog.aggregate({
         where: { queueName, status: { in: [SyncLogStatus.completed, SyncLogStatus.partial] } },
-        orderBy: { completedAt: 'desc' },
+        _max: { completedAt: true },
       }),
-      this.prisma.syncLog.findFirst({
+      this.prisma.syncLog.aggregate({
         where: { queueName, status: SyncLogStatus.failed },
-        orderBy: { failedAt: 'desc' },
+        _max: { failedAt: true },
       }),
     ]);
 
@@ -357,8 +357,8 @@ export class ProfessorSyncQueueService {
         count: stuckJobs.length,
         jobs: stuckJobs,
       },
-      lastSuccessfulJobAt: latestSuccess?.completedAt || null,
-      lastFailedJobAt: latestFailure?.failedAt || null,
+      lastSuccessfulJobAt: latestSuccess._max.completedAt || null,
+      lastFailedJobAt: latestFailure._max.failedAt || null,
       jobs: await Promise.all(jobs.map((job) => this.toSafeJobSummary(job))),
     };
   }
@@ -435,6 +435,21 @@ export class ProfessorSyncQueueService {
 
   getMonitoredQueueNames() {
     return [...MONITORED_QUEUE_NAMES];
+  }
+
+  async findFirstPendingJob(queueName: ProfessorSyncQueueName | ScholarshipQueueName | OpportunityQueueName) {
+    const queue = this.getQueue(queueName);
+    const [job] = await queue.getJobs(['active', 'waiting', 'delayed'], 0, 0, true);
+
+    if (!job) {
+      return null;
+    }
+
+    return {
+      id: String(job.id),
+      name: job.name,
+      state: await job.getState(),
+    };
   }
 
   getAiQueueNames() {

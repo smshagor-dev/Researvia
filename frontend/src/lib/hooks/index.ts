@@ -85,11 +85,12 @@ export function useProfessor(id: string) {
   });
 }
 
-export function useAdminProfessors(params?: any) {
+export function useAdminProfessors(params?: any, options?: { refetchInterval?: number | false }) {
   return useQuery({
     queryKey: ['admin-professors', params],
     queryFn: () => adminProfessorsApi.list(params),
     staleTime: 1000 * 30,
+    refetchInterval: options?.refetchInterval,
   });
 }
 
@@ -245,6 +246,30 @@ export function useAdminScholarshipSyncDetails() {
       qc.invalidateQueries({ queryKey: ['admin-scholarships'] });
       qc.invalidateQueries({ queryKey: ['admin-system-health'] });
       qc.invalidateQueries({ queryKey: ['admin-system-queues'] });
+    },
+  });
+}
+
+export function useAdminScholarshipDeadlineSync() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => adminScholarshipsApi.syncDeadlines(),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['admin-scholarships'] });
+      qc.invalidateQueries({ queryKey: ['admin-professor-sync-jobs'] });
+      qc.invalidateQueries({ queryKey: ['admin-professor-sync-logs'] });
+    },
+  });
+}
+
+export function useAdminScholarshipQualitySync() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data?: any) => adminScholarshipsApi.syncQuality(data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['admin-scholarships'] });
+      qc.invalidateQueries({ queryKey: ['admin-professor-sync-jobs'] });
+      qc.invalidateQueries({ queryKey: ['admin-professor-sync-logs'] });
     },
   });
 }
@@ -502,12 +527,32 @@ export function useBillingUsage() {
   return useQuery({ queryKey: ['billing-usage'], queryFn: billingApi.usage, refetchInterval: 30000 });
 }
 
+export function useBillingPaymentMethods() {
+  return useQuery({ queryKey: ['billing-payment-methods'], queryFn: billingApi.getPaymentMethods, staleTime: 1000 * 60 * 5 });
+}
+
+export function useBillingPromotions() {
+  return useQuery({ queryKey: ['billing-promotions'], queryFn: billingApi.getPromotions, staleTime: 1000 * 60 });
+}
+
 export function useBillingCheckout() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: billingApi.checkout,
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['billing'] });
+      qc.invalidateQueries({ queryKey: ['my-subscription'] });
+    },
+  });
+}
+
+export function useNowPaymentsCheckout() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: billingApi.createNowPayment,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['billing'] });
+      qc.invalidateQueries({ queryKey: ['billing-payment-methods'] });
       qc.invalidateQueries({ queryKey: ['my-subscription'] });
     },
   });
@@ -520,10 +565,37 @@ export function useBillingPortal() {
 export function useApplyCoupon() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (code: string) => billingApi.applyCoupon(code),
+    mutationFn: ({ code, planSlug }: { code: string; planSlug?: string }) => billingApi.applyCoupon(code, planSlug),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['billing'] });
+      qc.invalidateQueries({ queryKey: ['billing-promotions'] });
       qc.invalidateQueries({ queryKey: ['billing-invoices'] });
+    },
+  });
+}
+
+export function useAdminBillingPlans() {
+  return useQuery({ queryKey: ['admin-billing-plans'], queryFn: adminBillingApi.getPlans, staleTime: 0, refetchOnMount: 'always' });
+}
+
+export function useCreateAdminPlan() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: adminBillingApi.createPlan,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['admin-billing-plans'] });
+      qc.invalidateQueries({ queryKey: ['plans'] });
+    },
+  });
+}
+
+export function useUpdateAdminPlan() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, data }: { id: string; data: any }) => adminBillingApi.updatePlan(id, data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['admin-billing-plans'] });
+      qc.invalidateQueries({ queryKey: ['plans'] });
     },
   });
 }
@@ -949,6 +1021,21 @@ export function useCreateCoupon() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['admin-billing-coupons'] });
       qc.invalidateQueries({ queryKey: ['admin-billing-stats'] });
+      qc.invalidateQueries({ queryKey: ['billing-promotions'] });
+      qc.invalidateQueries({ queryKey: ['billing'] });
+    },
+  });
+}
+
+export function useUpdateCoupon() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, data }: { id: string; data: any }) => adminBillingApi.updateCoupon(id, data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['admin-billing-coupons'] });
+      qc.invalidateQueries({ queryKey: ['admin-billing-stats'] });
+      qc.invalidateQueries({ queryKey: ['billing-promotions'] });
+      qc.invalidateQueries({ queryKey: ['billing'] });
     },
   });
 }

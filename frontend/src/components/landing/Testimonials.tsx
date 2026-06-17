@@ -5,7 +5,7 @@ import { Star } from 'lucide-react';
 import { Reveal } from './motion';
 
 const testimonials = [
-  { name: 'Maya Chen', role: 'MS Computer Science Applicant', university: 'University of Toronto', quote: 'ProfCRM helped me move from random cold emails to a focused professor shortlist with messages that actually sounded like my research interests.', initials: 'MC' },
+  { name: 'Maya Chen', role: 'MS Computer Science Applicant', university: 'University of Toronto', quote: 'ResearVia helped me move from random cold emails to a focused professor shortlist with messages that sounded much closer to my research interests.', initials: 'MC' },
   { name: 'Ahmed Rahman', role: 'PhD Research Candidate', university: 'TUM', quote: 'The email tracking and scholarship deadline view gave me one calm place to manage applications across multiple countries.', initials: 'AR' },
   { name: 'Sofia Martinez', role: 'Scholarship Applicant', university: 'University of Cambridge', quote: 'The AI drafts were specific, concise, and easy to edit. I saved hours while keeping every outreach message professional.', initials: 'SM' },
 ];

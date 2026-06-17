@@ -3,7 +3,7 @@ const testimonials = [
     name: 'Maya Chen',
     role: 'MS Computer Science Applicant',
     university: 'University of Toronto',
-    quote: 'ProfCRM helped me move from random cold emails to a focused professor shortlist with messages that actually sounded like my research interests.',
+    quote: 'ResearVia helped me move from random cold emails to a focused professor shortlist with messages that sounded much closer to my research interests.',
     initials: 'MC',
   },
   {

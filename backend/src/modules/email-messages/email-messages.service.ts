@@ -9,6 +9,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { UsageMeteringService } from '../billing/usage-metering.service';
 import { AuditLogService } from '../security/audit-log.service';
 import { emailSendCounter } from '../observability/metrics.registry';
+import { SystemSettingsService } from '../system-settings/system-settings.service';
 
 @Injectable()
 export class EmailMessagesService {
@@ -22,6 +23,7 @@ export class EmailMessagesService {
     private readonly mailSettings: MailSettingsService,
     private readonly usage: UsageMeteringService,
     private readonly audit: AuditLogService,
+    private readonly systemSettings: SystemSettingsService,
   ) {}
 
   async createMessage(threadId: string, userId: string, data: any) {
@@ -31,7 +33,7 @@ export class EmailMessagesService {
       ? await this.emailAccounts.getDecryptedEmailAccount(thread.accountId)
       : null;
 
-    const messageId = `<${uuidv4()}@profcrm.app>`;
+    const messageId = `<${uuidv4()}@researvia.app>`;
     const message = await this.prisma.emailMessage.create({
       data: {
         threadId,
@@ -88,7 +90,10 @@ export class EmailMessagesService {
           t.accountId = sendAccount.id;
           t.accountType = sendAccount.type.toLowerCase();
         } catch (err: any) {
-          const fallbackEnabled = String(this.config.get('ALLOW_EMAIL_FALLBACK', 'false')).toLowerCase() === 'true';
+          const fallbackEnabled = await this.systemSettings.getBoolean(
+            'email.allow_fallback',
+            String(this.config.get('ALLOW_EMAIL_FALLBACK', 'false')).toLowerCase() === 'true',
+          );
           const fallback = fallbackEnabled ? await this.getSystemFallbackAccount(message.userId) : null;
 
           if (!fallback || fallback.id === sendAccount.id) {

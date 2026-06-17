@@ -64,4 +64,14 @@ export class AdminScholarshipsController {
   syncDetails(@Body() body: any) {
     return this.discoveryService.queueDetailsSync('admin', body?.scholarshipId);
   }
+
+  @Post('sync/deadlines')
+  syncDeadlines() {
+    return this.discoveryService.queueDeadlineCheck('admin');
+  }
+
+  @Post('sync/quality')
+  syncQuality(@Body() body: any) {
+    return this.discoveryService.queueQualityScore('admin', body?.scholarshipId);
+  }
 }

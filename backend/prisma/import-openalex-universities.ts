@@ -85,7 +85,7 @@ async function main() {
   const limit = parseNumber(args.limit, 0);
   const perPage = Math.min(parseNumber(args.perPage, 200), 200);
   const startCursor = args.cursor || '*';
-  const mailto = process.env.OPENALEX_EMAIL || 'admin@profcrm.com';
+  const mailto = process.env.OPENALEX_EMAIL || 'ops@researvia.com';
 
   const countries = await prisma.country.findMany({
     select: { id: true, isoAlpha2: true },

@@ -1,8 +1,8 @@
 const stats = [
-  { value: '100M+', label: 'Professors in Database' },
-  { value: '50K+', label: 'Universities Covered' },
-  { value: '500K+', label: 'Emails Sent' },
-  { value: '95%', label: 'Email Delivery Rate' },
+  { value: '2', label: 'OAuth Providers' },
+  { value: '2', label: 'Billing Providers' },
+  { value: '5', label: 'Credit-Metered Actions' },
+  { value: '3', label: 'Deployment Modes' },
 ];
 
 export function StatsSection() {
@@ -11,8 +11,8 @@ export function StatsSection() {
       <div className="mx-auto max-w-7xl overflow-hidden rounded-2xl bg-gradient-to-br from-indigo-700 via-purple-700 to-blue-700 p-8 text-white shadow-2xl shadow-indigo-900/20 sm:p-10 lg:p-12">
         <div className="grid gap-8 md:grid-cols-[0.9fr_1.1fr] md:items-center">
           <div>
-            <p className="text-sm font-bold uppercase tracking-wide text-indigo-100">Global academic network</p>
-            <h2 className="mt-3 text-3xl font-bold tracking-tight sm:text-4xl">Built for serious academic outreach at scale.</h2>
+            <p className="text-sm font-bold uppercase tracking-wide text-indigo-100">Verified product capabilities</p>
+            <h2 className="mt-3 text-3xl font-bold tracking-tight sm:text-4xl">Built for serious academic outreach workflows.</h2>
           </div>
           <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
             {stats.map((stat) => (

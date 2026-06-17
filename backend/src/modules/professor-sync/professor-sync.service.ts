@@ -37,42 +37,44 @@ export class ProfessorSyncService {
     try {
       const professors = await this.loadTargetProfessors(job.data.professorId);
       for (const professor of professors) {
-        const source = await this.prisma.professorSource.findFirst({
-          where: { professorId: professor.id },
-          orderBy: { scrapedAt: 'desc' },
-        });
+        try {
+          const source = await this.findPreferredProfessorSource(professor.id);
 
-        if (!source?.externalId) {
+          if (!source?.externalId) {
+            counters.skippedCount += 1;
+            continue;
+          }
+
+          const adapter = this.getAdapter(source.sourceType);
+          if (!adapter) {
+            counters.skippedCount += 1;
+            continue;
+          }
+
+          const details = await adapter.getProfessorDetails(source.externalId);
+          if (!details) {
+            counters.skippedCount += 1;
+            continue;
+          }
+
+          await this.applyProfessorDetails(professor.id, details, adapter.sourceType);
+          const qualityJob = await this.queueService.enqueueQualityScore({
+            professorId: professor.id,
+            trigger: job.data.trigger || 'system',
+          });
+          await this.syncLogs.createQueuedLog({
+            jobId: String(qualityJob.id),
+            queueName: PROFESSOR_QUALITY_SCORE_QUEUE,
+            jobName: QUALITY_SCORE_JOB_NAME,
+            metadataJson: { professorId: professor.id, trigger: job.data.trigger || 'system' },
+          });
+          counters.processedCount += 1;
+          counters.updatedCount += 1;
+          await job.updateProgress(counters.processedCount);
+        } catch (error) {
           counters.skippedCount += 1;
-          continue;
+          this.logger.warn(`Profile sync skipped for professor ${professor.id}: ${(error as Error).message}`);
         }
-
-        const adapter = this.getAdapter(source.sourceType);
-        if (!adapter) {
-          counters.skippedCount += 1;
-          continue;
-        }
-
-        const details = await adapter.getProfessorDetails(source.externalId);
-        if (!details) {
-          counters.skippedCount += 1;
-          continue;
-        }
-
-        await this.applyProfessorDetails(professor.id, details, adapter.sourceType);
-        const qualityJob = await this.queueService.enqueueQualityScore({
-          professorId: professor.id,
-          trigger: job.data.trigger || 'system',
-        });
-        await this.syncLogs.createQueuedLog({
-          jobId: String(qualityJob.id),
-          queueName: PROFESSOR_QUALITY_SCORE_QUEUE,
-          jobName: QUALITY_SCORE_JOB_NAME,
-          metadataJson: { professorId: professor.id, trigger: job.data.trigger || 'system' },
-        });
-        counters.processedCount += 1;
-        counters.updatedCount += 1;
-        await job.updateProgress(counters.processedCount);
       }
 
       await this.syncLogs.markCompleted(String(job.id), counters, toPrismaJsonValue({ filter: job.data }));
@@ -95,72 +97,74 @@ export class ProfessorSyncService {
     try {
       const professors = await this.loadTargetProfessors(job.data.professorId);
       for (const professor of professors) {
-        const source = await this.prisma.professorSource.findFirst({
-          where: { professorId: professor.id, sourceType: DataSource.openalex },
-          orderBy: { scrapedAt: 'desc' },
-        });
+        try {
+          const source = await this.findPreferredProfessorSource(professor.id, DataSource.openalex);
 
-        if (!source?.externalId) {
-          counters.skippedCount += 1;
-          continue;
-        }
-
-        const adapter = this.getAdapter(DataSource.openalex);
-        const details = adapter ? await adapter.getProfessorDetails(source.externalId) : null;
-        if (!details?.publications?.length) {
-          counters.skippedCount += 1;
-          continue;
-        }
-
-        for (const publication of details.publications) {
-          const existing = await this.prisma.publication.findFirst({
-            where: publication.externalId
-              ? {
-                  OR: [
-                    { openalexId: publication.externalId },
-                    { professorId: professor.id, title: publication.title },
-                  ],
-                }
-              : { professorId: professor.id, title: publication.title },
-          });
-
-          if (existing) {
-            await this.prisma.publication.update({
-              where: { id: existing.id },
-              data: {
-                openalexId: publication.externalId || existing.openalexId,
-                doi: publication.doi || existing.doi,
-                abstract: publication.abstract || existing.abstract,
-                venue: publication.venue || existing.venue,
-                publicationYear: publication.publicationYear || existing.publicationYear,
-                publicationDate: publication.publicationDate ? new Date(publication.publicationDate) : existing.publicationDate,
-                citationCount: publication.citationCount || existing.citationCount,
-                url: publication.url || existing.url,
-                pdfUrl: publication.pdfUrl || existing.pdfUrl,
-              },
-            });
-          } else {
-            await this.prisma.publication.create({
-              data: {
-                professorId: professor.id,
-                openalexId: publication.externalId || null,
-                doi: publication.doi || null,
-                title: publication.title,
-                abstract: publication.abstract || null,
-                venue: publication.venue || null,
-                publicationYear: publication.publicationYear || null,
-                publicationDate: publication.publicationDate ? new Date(publication.publicationDate) : null,
-                citationCount: publication.citationCount || 0,
-                url: publication.url || null,
-                pdfUrl: publication.pdfUrl || null,
-              },
-            });
+          if (!source?.externalId) {
+            counters.skippedCount += 1;
+            continue;
           }
-        }
 
-        counters.processedCount += 1;
-        counters.updatedCount += 1;
-        await job.updateProgress(counters.processedCount);
+          const adapter = this.getAdapter(DataSource.openalex);
+          const details = adapter ? await adapter.getProfessorDetails(source.externalId) : null;
+          if (!details?.publications?.length) {
+            counters.skippedCount += 1;
+            continue;
+          }
+
+          for (const publication of details.publications) {
+            const existing = await this.prisma.publication.findFirst({
+              where: publication.externalId
+                ? {
+                    OR: [
+                      { openalexId: publication.externalId },
+                      { professorId: professor.id, title: publication.title },
+                    ],
+                  }
+                : { professorId: professor.id, title: publication.title },
+            });
+
+            if (existing) {
+              await this.prisma.publication.update({
+                where: { id: existing.id },
+                data: {
+                  openalexId: publication.externalId || existing.openalexId,
+                  doi: publication.doi || existing.doi,
+                  abstract: publication.abstract || existing.abstract,
+                  venue: publication.venue || existing.venue,
+                  publicationYear: publication.publicationYear || existing.publicationYear,
+                  publicationDate: publication.publicationDate ? new Date(publication.publicationDate) : existing.publicationDate,
+                  citationCount: publication.citationCount || existing.citationCount,
+                  url: publication.url || existing.url,
+                  pdfUrl: publication.pdfUrl || existing.pdfUrl,
+                },
+              });
+            } else {
+              await this.prisma.publication.create({
+                data: {
+                  professorId: professor.id,
+                  openalexId: publication.externalId || null,
+                  doi: publication.doi || null,
+                  title: publication.title,
+                  abstract: publication.abstract || null,
+                  venue: publication.venue || null,
+                  publicationYear: publication.publicationYear || null,
+                  publicationDate: publication.publicationDate ? new Date(publication.publicationDate) : null,
+                  citationCount: publication.citationCount || 0,
+                  url: publication.url || null,
+                  pdfUrl: publication.pdfUrl || null,
+                },
+              });
+            }
+          }
+
+          counters.processedCount += 1;
+          counters.updatedCount += 1;
+          await job.updateProgress(counters.processedCount);
+        } catch (error) {
+          counters.skippedCount += 1;
+          this.logger.warn(`Publication sync skipped for professor ${professor.id}: ${(error as Error).message}`);
+        }
       }
 
       await this.syncLogs.markCompleted(String(job.id), counters, toPrismaJsonValue({ filter: job.data }));
@@ -204,14 +208,25 @@ export class ProfessorSyncService {
       if ((professor.publicationsCount ?? professor.publications.length) > 0) score += 15;
       if (professor.sources.length > 0) score += 10;
       if (professor.orcidId || professor.personalWebsite || professor.googleScholarUrl || professor.labUrl) score += 10;
+      const visibility = this.deriveVisibilityState({
+        score,
+        hasResearchAreas: professor.researchAreas.length > 0,
+        hasSignals:
+          Boolean(professor.orcidId) ||
+          Boolean(professor.personalWebsite) ||
+          Boolean(professor.googleScholarUrl) ||
+          Boolean(professor.labUrl) ||
+          (professor.publicationsCount ?? professor.publications.length) > 0,
+      });
 
       await this.prisma.professor.update({
         where: { id: professor.id },
         data: {
           dataQualityScore: Math.min(100, score),
           lastSyncedAt: new Date(),
-          verificationStatus: VerificationStatus.pending,
-          isPublic: false,
+          verificationStatus: visibility.verificationStatus,
+          isPublic: visibility.isPublic,
+          lastVerifiedAt: visibility.lastVerifiedAt,
         },
       });
 
@@ -311,8 +326,6 @@ export class ProfessorSyncService {
         publicationsCount: details.publicationsCount ?? undefined,
         lastPublicationYear: details.lastPublicationYear ?? undefined,
         sourceType,
-        verificationStatus: VerificationStatus.pending,
-        isPublic: false,
         lastSyncedAt: new Date(),
       },
     });
@@ -351,6 +364,65 @@ export class ProfessorSyncService {
 
   private createCounters(): SyncCounters {
     return { processedCount: 0, createdCount: 0, updatedCount: 0, skippedCount: 0 };
+  }
+
+  private deriveVisibilityState({
+    score,
+    hasResearchAreas,
+    hasSignals,
+  }: {
+    score: number;
+    hasResearchAreas: boolean;
+    hasSignals: boolean;
+  }) {
+    const isVerified = score >= 60 && hasResearchAreas && hasSignals;
+
+    return {
+      verificationStatus: isVerified ? VerificationStatus.verified : VerificationStatus.pending,
+      isPublic: isVerified,
+      lastVerifiedAt: isVerified ? new Date() : null,
+    };
+  }
+
+  private async findPreferredProfessorSource(professorId: string, preferredSourceType?: DataSource) {
+    const sourcePriority = [
+      preferredSourceType,
+      DataSource.openalex,
+      DataSource.orcid,
+      DataSource.crossref,
+      DataSource.ror,
+      DataSource.manual,
+      DataSource.import,
+    ].filter((value, index, array): value is DataSource => Boolean(value) && array.indexOf(value) === index);
+
+    for (const sourceType of sourcePriority) {
+      const source = await this.prisma.professorSource.findFirst({
+        where: {
+          professorId,
+          sourceType,
+          externalId: { not: null },
+        },
+        select: {
+          sourceType: true,
+          externalId: true,
+        },
+      });
+
+      if (source) {
+        return source;
+      }
+    }
+
+    return this.prisma.professorSource.findFirst({
+      where: {
+        professorId,
+        externalId: { not: null },
+      },
+      select: {
+        sourceType: true,
+        externalId: true,
+      },
+    });
   }
 
   private getAdapter(sourceType: DataSource) {

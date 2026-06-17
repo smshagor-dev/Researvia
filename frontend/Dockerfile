@@ -1,5 +1,9 @@
 FROM node:22-alpine AS builder
 WORKDIR /app
+ARG NEXT_PUBLIC_API_URL=http://localhost:3001/v1
+ARG NEXT_PUBLIC_WS_URL=http://localhost:3001
+ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+ENV NEXT_PUBLIC_WS_URL=$NEXT_PUBLIC_WS_URL
 COPY package*.json ./
 RUN npm ci --legacy-peer-deps
 COPY . .
@@ -8,6 +12,8 @@ RUN npm run build
 FROM node:22-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production
+ENV NEXT_PUBLIC_API_URL=http://localhost:3001/v1
+ENV NEXT_PUBLIC_WS_URL=http://localhost:3001
 RUN addgroup --system --gid 1001 nodejs && adduser --system --uid 1001 nextjs
 COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./

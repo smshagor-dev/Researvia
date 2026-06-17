@@ -1,11 +1,15 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { BillingCycle, Prisma, UsageMetricType } from '@prisma/client';
 import { PrismaService } from '../../shared/prisma/prisma.service';
+import { CreditsService } from '../credits/credits.service';
 import { UsageCheckResult, UsageResetResult } from './billing.types';
 
 @Injectable()
 export class UsageMeteringService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly credits: CreditsService,
+  ) {}
 
   async getUsageSummary(userId: string) {
     const subscription = await this.prisma.subscription.findFirst({
@@ -77,37 +81,42 @@ export class UsageMeteringService {
   async resetMonthlyUsageAndCredits() {
     const results: UsageResetResult[] = [];
     const activeSubscriptions = await this.prisma.subscription.findMany({
-      where: { status: { in: ['active', 'trialing', 'past_due'] } },
+      where: { status: { in: ['active', 'trialing'] } },
       include: { plan: true },
+      orderBy: [{ userId: 'asc' }, { createdAt: 'desc' }],
     });
-    for (const subscription of activeSubscriptions) {
-      const credits = await this.prisma.credits.upsert({
-        where: { userId: subscription.userId },
-        update: {
-          balance: { increment: subscription.plan.creditsPerMonth },
-          lifetimeEarned: { increment: subscription.plan.creditsPerMonth },
-        },
-        create: {
-          userId: subscription.userId,
-          balance: subscription.plan.creditsPerMonth,
-          lifetimeEarned: subscription.plan.creditsPerMonth,
-        },
-      });
 
-      await this.prisma.creditTransaction.create({
-        data: {
-          userId: subscription.userId,
-          walletId: credits.id,
-          amount: subscription.plan.creditsPerMonth,
-          type: 'subscription_grant',
+    const latestByUser = new Map<string, typeof activeSubscriptions[number]>();
+    for (const subscription of activeSubscriptions) {
+      if (!latestByUser.has(subscription.userId)) {
+        latestByUser.set(subscription.userId, subscription);
+      }
+    }
+
+    for (const subscription of latestByUser.values()) {
+      const resetKey = this.getResetKey(new Date());
+      if (subscription.lastCreditResetKey === resetKey) {
+        continue;
+      }
+
+      await this.credits.grant(
+        subscription.userId,
+        subscription.plan.creditsPerMonth,
+        'subscription_grant',
+        `${subscription.plan.name} monthly credit refresh`,
+        {
           reason: 'monthly_reset',
-          description: `${subscription.plan.name} monthly credit refresh`,
-          balanceAfter: credits.balance,
-          metadataJson: {
-            subscriptionId: subscription.id,
-            planId: subscription.planId,
-          } as Prisma.InputJsonValue,
-        },
+          subscriptionId: subscription.id,
+          planId: subscription.planId,
+          resetKey,
+          periodStart: subscription.currentPeriodStart?.toISOString() || null,
+          periodEnd: subscription.currentPeriodEnd?.toISOString() || null,
+        } as Prisma.InputJsonValue,
+      );
+
+      await this.prisma.subscription.update({
+        where: { id: subscription.id },
+        data: { lastCreditResetKey: resetKey },
       });
 
       results.push({ userId: subscription.userId, creditsGranted: subscription.plan.creditsPerMonth });
@@ -174,5 +183,10 @@ export class UsageMeteringService {
     const start = new Date(now.getFullYear(), now.getMonth(), 1);
     const end = new Date(now.getFullYear(), now.getMonth() + 1, 1);
     return { periodStart: start, periodEnd: end };
+  }
+
+  private getResetKey(date: Date) {
+    const month = `${date.getUTCMonth() + 1}`.padStart(2, '0');
+    return `${date.getUTCFullYear()}-${month}`;
   }
 }

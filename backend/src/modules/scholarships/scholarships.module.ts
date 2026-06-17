@@ -15,9 +15,13 @@ import { CheveningAdapter } from './adapters/chevening.adapter';
 import { MEXTAdapter } from './adapters/mext.adapter';
 import { CommonwealthAdapter } from './adapters/commonwealth.adapter';
 import { UniversityScholarshipAdapter } from './adapters/university-scholarship.adapter';
+import { BootstrapScholarshipAdapter } from './adapters/bootstrap-scholarship.adapter';
 import { SyncLogsModule } from '../sync-logs/sync-logs.module';
 import { QueuesModule } from '../../queues/queues.module';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { SystemSettingsService } from '../system-settings/system-settings.service';
+import { CreditsModule } from '../credits/credits.module';
+import { BillingModule } from '../billing/billing.module';
 
 @Module({
   imports: [
@@ -28,6 +32,8 @@ import { NotificationsModule } from '../notifications/notifications.module';
     SyncLogsModule,
     QueuesModule,
     NotificationsModule,
+    CreditsModule,
+    BillingModule,
   ],
   controllers: [ScholarshipsController, AdminScholarshipsController],
   providers: [
@@ -37,15 +43,16 @@ import { NotificationsModule } from '../notifications/notifications.module';
     PaginationService,
     {
       provide: SCHOLARSHIP_SOURCE_ADAPTERS,
-      inject: [ConfigService],
-      useFactory: (config: ConfigService) => [
-        new DAADAdapter(config),
-        new ErasmusAdapter(config),
-        new FulbrightAdapter(config),
-        new CheveningAdapter(config),
-        new MEXTAdapter(config),
-        new CommonwealthAdapter(config),
-        new UniversityScholarshipAdapter(config),
+      inject: [ConfigService, SystemSettingsService],
+      useFactory: (config: ConfigService, systemSettings: SystemSettingsService) => [
+        new BootstrapScholarshipAdapter(),
+        new DAADAdapter(config, systemSettings),
+        new ErasmusAdapter(config, systemSettings),
+        new FulbrightAdapter(config, systemSettings),
+        new CheveningAdapter(config, systemSettings),
+        new MEXTAdapter(config, systemSettings),
+        new CommonwealthAdapter(config, systemSettings),
+        new UniversityScholarshipAdapter(config, systemSettings),
       ],
     },
   ],

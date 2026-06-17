@@ -7,12 +7,17 @@ import {
 } from '@prisma/client';
 import { PrismaService } from '../../shared/prisma/prisma.service';
 import { PaginationService } from '../../shared/pagination/pagination.service';
+import { CreditsService } from '../credits/credits.service';
+import { UsageMeteringService } from '../billing/usage-metering.service';
+import { ACTION_CREDIT_COSTS } from '../billing/billing.constants';
 
 @Injectable()
 export class ScholarshipsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly pagination: PaginationService,
+    private readonly credits: CreditsService,
+    private readonly usage: UsageMeteringService,
   ) {}
 
   async findAll(filters: any, userId?: string) {
@@ -85,8 +90,13 @@ export class ScholarshipsService {
     });
 
     if (!userId) {
-      return scholarship;
+      return this.toLockedScholarshipResponse(scholarship, false);
     }
+
+    const unlock = await this.prisma.scholarshipUnlock.findUnique({
+      where: { userId_scholarshipId: { userId, scholarshipId: scholarship.id } },
+      select: { id: true, unlockedAt: true },
+    });
 
     const match = await this.prisma.matchScore.findUnique({
       where: {
@@ -98,8 +108,14 @@ export class ScholarshipsService {
       },
     });
 
-    return {
+    const response = {
       ...scholarship,
+      access: {
+        requiresUnlock: !unlock,
+        isUnlocked: Boolean(unlock),
+        unlockCost: ACTION_CREDIT_COSTS.scholarship_unlock,
+        unlockedAt: unlock?.unlockedAt || null,
+      },
       matchScore: match
         ? {
             score: match.score,
@@ -113,6 +129,53 @@ export class ScholarshipsService {
             calculatedAt: match.calculatedAt,
           }
         : null,
+    };
+
+    return unlock ? response : this.toLockedScholarshipResponse(response, true);
+  }
+
+  async unlock(userId: string, scholarshipId: string) {
+    const scholarship = await this.prisma.scholarship.findUnique({
+      where: { id: scholarshipId },
+      select: { id: true, title: true, status: true, verificationStatus: true, isActive: true, isExpired: true },
+    });
+    if (!scholarship || !scholarship.isActive || scholarship.isExpired) {
+      throw new NotFoundException('Scholarship not found');
+    }
+
+    const existing = await this.prisma.scholarshipUnlock.findUnique({
+      where: { userId_scholarshipId: { userId, scholarshipId } },
+      select: { id: true, unlockedAt: true },
+    });
+    if (existing) {
+      return {
+        unlocked: true,
+        alreadyUnlocked: true,
+        unlockedAt: existing.unlockedAt,
+      };
+    }
+
+    await this.usage.assertWithinLimit(userId, 'scholarship_unlock');
+    await this.prisma.$transaction(async (tx) => {
+      await this.credits.adjustWithTransaction(tx, userId, -ACTION_CREDIT_COSTS.scholarship_unlock, {
+        type: 'scholarship_unlock',
+        reason: 'scholarship_unlock',
+        description: `Scholarship unlock: ${scholarship.title}`,
+        referenceId: scholarshipId,
+        referenceType: 'scholarships',
+        allowNegative: false,
+        createIfMissing: false,
+      });
+      await tx.scholarshipUnlock.create({
+        data: { userId, scholarshipId },
+      });
+    });
+    await this.usage.recordUsage(userId, 'scholarship_unlock');
+
+    return {
+      unlocked: true,
+      alreadyUnlocked: false,
+      creditsCharged: ACTION_CREDIT_COSTS.scholarship_unlock,
     };
   }
 
@@ -362,5 +425,25 @@ export class ScholarshipsService {
           : null,
       };
     });
+  }
+
+  private toLockedScholarshipResponse(scholarship: any, authenticated: boolean) {
+    return {
+      ...scholarship,
+      description: null,
+      eligibilityCriteria: null,
+      eligibility: null,
+      requiredDocuments: null,
+      applicationUrl: null,
+      officialSourceUrl: null,
+      officialUrl: null,
+      sources: [],
+      access: {
+        requiresUnlock: true,
+        isUnlocked: false,
+        unlockCost: ACTION_CREDIT_COSTS.scholarship_unlock,
+        authenticated,
+      },
+    };
   }
 }

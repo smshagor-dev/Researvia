@@ -9,10 +9,11 @@ import { NotificationsModule } from '../notifications/notifications.module';
 import { SyncLogsModule } from '../sync-logs/sync-logs.module';
 import { QueuesModule } from '../../queues/queues.module';
 import { BillingCronService } from './billing-cron.service';
+import { NowPaymentsService } from './nowpayments.service';
 @Module({
   imports: [CreditsModule, NotificationsModule, SyncLogsModule, QueuesModule],
   controllers: [BillingController, BillingUserController, AdminBillingController],
-  providers: [BillingService, UsageMeteringService, BillingCronService],
+  providers: [BillingService, UsageMeteringService, BillingCronService, NowPaymentsService],
   exports: [BillingService, UsageMeteringService],
 })
 export class BillingModule {}

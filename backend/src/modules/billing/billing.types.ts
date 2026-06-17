@@ -28,6 +28,10 @@ export interface CheckoutRequest {
   couponCode?: string;
 }
 
+export interface NowPaymentsCreateRequest extends CheckoutRequest {
+  payCurrency?: string;
+}
+
 export interface UsageCheckResult {
   metricType: UsageMetricType;
   currentCount: number;

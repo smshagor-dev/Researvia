@@ -187,29 +187,19 @@ export class ProfessorsService {
     }
 
     await this.prisma.$transaction(async (tx) => {
-      const credits = await tx.credits.findUnique({ where: { userId } });
+      const credits = await tx.credits.findUnique({ where: { userId }, select: { balance: true } });
       if (!credits || credits.balance < 5) {
         throw new BadRequestException({ code: 'INSUFFICIENT_CREDITS', message: `Insufficient credits. Need 5, have ${credits?.balance || 0}` });
       }
-
-      const newBalance = credits.balance - 5;
-      await tx.credits.update({
-        where: { userId },
-        data: { balance: newBalance, lifetimeSpent: { increment: 5 } },
-      });
-      await tx.creditTransaction.create({
-        data: {
-          userId,
-          walletId: credits.id,
-          amount: -5,
-          type: 'professor_reveal',
-          referenceId: professorId,
-          referenceType: 'professors',
-          reason: 'Professor email reveal',
-          description: 'Professor email reveal',
-          metadataJson: { emailId: emailRecord.id } as any,
-          balanceAfter: newBalance,
-        },
+      await this.credits.adjustWithTransaction(tx, userId, -5, {
+        type: 'professor_reveal',
+        referenceId: professorId,
+        referenceType: 'professors',
+        reason: 'professor_reveal',
+        description: 'Professor email reveal',
+        metadataJson: { emailId: emailRecord.id } as any,
+        allowNegative: false,
+        createIfMissing: false,
       });
       await tx.emailRevealLog.create({
         data: {

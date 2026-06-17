@@ -24,6 +24,7 @@ import type {
 import { slugify, normalizeName } from './utils/normalize.util';
 import { hashEmail } from '../faculty-scraper/utils/email.util';
 import { PROFESSOR_QUALITY_SCORE_QUEUE, QUALITY_SCORE_JOB_NAME } from '../professor-sync/professor-sync.constants';
+import { SystemSettingsService } from '../system-settings/system-settings.service';
 
 type OpenAlexAuthorRecord = {
   id: string;
@@ -54,6 +55,7 @@ export class DiscoveryService {
     private readonly prisma: PrismaService,
     private readonly syncLogs: SyncLogsService,
     private readonly queueService: ProfessorSyncQueueService,
+    private readonly systemSettings: SystemSettingsService,
     @Inject(ACADEMIC_SOURCE_ADAPTERS)
     private readonly adapters: AcademicSourceAdapter[],
   ) {}
@@ -206,8 +208,6 @@ export class DiscoveryService {
             publicationsCount: candidate.publicationsCount ?? existing.publicationsCount,
             lastPublicationYear: candidate.lastPublicationYear ?? existing.lastPublicationYear,
             sourceType: adapter.sourceType,
-            verificationStatus: VerificationStatus.pending,
-            isPublic: false,
             lastSyncedAt: new Date(),
           },
         })
@@ -505,12 +505,21 @@ export class DiscoveryService {
   }
 
   private async fetchOpenAlexAuthorsByUniversity(openalexInstitutionId: string, cursor: string, perPage: number) {
-    const url = new URL('/authors', process.env.OPENALEX_BASE_URL || 'https://api.openalex.org');
+    const baseUrl =
+      await this.systemSettings.getString('discovery.openalex.base_url')
+      || process.env.OPENALEX_BASE_URL
+      || 'https://api.openalex.org';
+    const mailto =
+      await this.systemSettings.getString('discovery.openalex.mailto')
+      || process.env.OPENALEX_EMAIL
+      || '';
+
+    const url = new URL('/authors', baseUrl);
     url.searchParams.set('filter', `last_known_institutions.id:${openalexInstitutionId}`);
     url.searchParams.set('per-page', String(perPage));
     url.searchParams.set('cursor', cursor);
-    if (process.env.OPENALEX_EMAIL) {
-      url.searchParams.set('mailto', process.env.OPENALEX_EMAIL);
+    if (mailto) {
+      url.searchParams.set('mailto', mailto);
     }
 
     const response = await fetch(url);

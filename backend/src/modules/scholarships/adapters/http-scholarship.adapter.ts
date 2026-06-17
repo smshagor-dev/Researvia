@@ -2,6 +2,7 @@ import { ConfigService } from '@nestjs/config';
 import { FundingType, ScholarshipDegreeLevel, ScholarshipSourceType } from '@prisma/client';
 import axios from 'axios';
 import { ScholarshipSourceAdapter, type NormalizedScholarship } from '../scholarship.types';
+import { SystemSettingsService } from '../../system-settings/system-settings.service';
 
 type RawScholarshipRecord = Record<string, unknown>;
 
@@ -10,10 +11,13 @@ export abstract class HttpScholarshipAdapter implements ScholarshipSourceAdapter
   abstract readonly sourceName: string;
   protected abstract readonly configKey: string;
 
-  constructor(protected readonly config: ConfigService) {}
+  constructor(
+    protected readonly config: ConfigService,
+    protected readonly systemSettings: SystemSettingsService,
+  ) {}
 
   async searchScholarships(): Promise<NormalizedScholarship[]> {
-    const endpoint = this.getConfiguredUrl();
+    const endpoint = await this.getConfiguredUrl();
     if (!endpoint) {
       return [];
     }
@@ -26,7 +30,7 @@ export abstract class HttpScholarshipAdapter implements ScholarshipSourceAdapter
   }
 
   async getScholarshipDetails(sourceExternalId: string, sourceUrl?: string | null): Promise<NormalizedScholarship | null> {
-    const endpoint = sourceUrl || this.buildDetailUrl(sourceExternalId);
+    const endpoint = sourceUrl || await this.buildDetailUrl(sourceExternalId);
     if (!endpoint) {
       return null;
     }
@@ -37,12 +41,14 @@ export abstract class HttpScholarshipAdapter implements ScholarshipSourceAdapter
     return this.normalize(candidate);
   }
 
-  protected getConfiguredUrl() {
-    return this.config.get<string>(this.configKey) || '';
+  protected async getConfiguredUrl() {
+    return await this.systemSettings.getString(`scholarships.sources.${this.sourceType}.endpoint`)
+      || this.config.get<string>(this.configKey)
+      || '';
   }
 
-  protected buildDetailUrl(sourceExternalId: string) {
-    const base = this.getConfiguredUrl();
+  protected async buildDetailUrl(sourceExternalId: string) {
+    const base = await this.getConfiguredUrl();
     if (!base || !sourceExternalId) {
       return '';
     }

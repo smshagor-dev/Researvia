@@ -67,7 +67,7 @@ export default function RegisterPage() {
             <div className="w-10 h-10 rounded-xl gradient-primary flex items-center justify-center">
               <GraduationCap className="w-6 h-6 text-white" />
             </div>
-            <span className="text-2xl font-bold gradient-text">ProfCRM</span>
+            <span className="text-2xl font-bold gradient-text">ResearVia</span>
           </div>
           <h1 className="text-2xl font-bold text-gray-900">Create your account</h1>
           <p className="text-gray-500 mt-1">Start your academic outreach journey</p>

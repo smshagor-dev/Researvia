@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Inject, Injectable, Logger, NotFoundException, OnModuleInit } from '@nestjs/common';
 import {
   FundingType,
   Prisma,
@@ -35,7 +35,7 @@ import type {
 } from './scholarship.types';
 
 @Injectable()
-export class ScholarshipDiscoveryService {
+export class ScholarshipDiscoveryService implements OnModuleInit {
   private readonly logger = new Logger(ScholarshipDiscoveryService.name);
 
   constructor(
@@ -47,6 +47,33 @@ export class ScholarshipDiscoveryService {
     @Inject(SCHOLARSHIP_SOURCE_ADAPTERS)
     private readonly adapters: ScholarshipSourceAdapter[],
   ) {}
+
+  async onModuleInit() {
+    if (process.env.NODE_ENV === 'test') {
+      return;
+    }
+
+    try {
+      const scholarshipCount = await this.prisma.scholarship.count();
+      if (scholarshipCount >= 5) {
+        return;
+      }
+
+      const bootstrapAdapter = this.adapters.find((adapter) => adapter.sourceType === ScholarshipSourceType.manual);
+      if (!bootstrapAdapter) {
+        return;
+      }
+
+      const bootstrapScholarships = await bootstrapAdapter.searchScholarships();
+      for (const scholarship of bootstrapScholarships) {
+        await this.upsertScholarshipFromSource(bootstrapAdapter, scholarship);
+      }
+
+      this.logger.log(`Bootstrap scholarship catalog ensured with ${bootstrapScholarships.length} entries.`);
+    } catch (error) {
+      this.logger.warn(`Scholarship bootstrap skipped: ${(error as Error).message}`);
+    }
+  }
 
   async runDiscovery(job: Job<ScholarshipDiscoveryJobData>) {
     const counters = this.createCounters();
@@ -216,9 +243,24 @@ export class ScholarshipDiscoveryService {
 
       for (const scholarship of scholarships) {
         const qualityScore = this.calculateQualityScore(scholarship);
+        const automatedState = this.deriveAutomatedState({
+          currentStatus: scholarship.status,
+          currentVerificationStatus: scholarship.verificationStatus,
+          deadline: scholarship.deadline,
+          needsReview: scholarship.needsReview,
+          qualityScore,
+        });
         await this.prisma.scholarship.update({
           where: { id: scholarship.id },
-          data: { qualityScore, lastSyncedAt: new Date() },
+          data: {
+            qualityScore,
+            lastSyncedAt: new Date(),
+            status: automatedState.status,
+            verificationStatus: automatedState.verificationStatus,
+            isVerified: automatedState.isVerified,
+            isActive: automatedState.isActive,
+            isExpired: automatedState.isExpired,
+          },
         });
         counters.processedCount += 1;
         counters.updatedCount += 1;
@@ -233,6 +275,11 @@ export class ScholarshipDiscoveryService {
   }
 
   async queueDiscovery(triggeredBy: string, sourceTypes?: ScholarshipSourceType[]) {
+    const pendingJob = await this.queues.findFirstPendingJob(SCHOLARSHIP_DISCOVERY_QUEUE);
+    if (pendingJob) {
+      return { jobId: pendingJob.id, status: pendingJob.state };
+    }
+
     const job = await this.queues.enqueueScholarshipDiscovery({ triggeredBy, sourceTypes });
     await this.syncLogs.createQueuedLog({
       jobId: String(job.id),
@@ -244,6 +291,13 @@ export class ScholarshipDiscoveryService {
   }
 
   async queueDetailsSync(triggeredBy: string, scholarshipId?: string) {
+    if (!scholarshipId) {
+      const pendingJob = await this.queues.findFirstPendingJob(SCHOLARSHIP_SYNC_QUEUE);
+      if (pendingJob) {
+        return { jobId: pendingJob.id, status: pendingJob.state };
+      }
+    }
+
     const job = await this.queues.enqueueScholarshipSync({ triggeredBy, scholarshipId });
     await this.syncLogs.createQueuedLog({
       jobId: String(job.id),
@@ -255,6 +309,11 @@ export class ScholarshipDiscoveryService {
   }
 
   async queueDeadlineCheck(triggeredBy: string) {
+    const pendingJob = await this.queues.findFirstPendingJob(SCHOLARSHIP_DEADLINE_CHECK_QUEUE);
+    if (pendingJob) {
+      return { jobId: pendingJob.id, status: pendingJob.state };
+    }
+
     const job = await this.queues.enqueueScholarshipDeadlineCheck({ triggeredBy });
     await this.syncLogs.createQueuedLog({
       jobId: String(job.id),
@@ -266,6 +325,13 @@ export class ScholarshipDiscoveryService {
   }
 
   async queueQualityScore(triggeredBy: string, scholarshipId?: string) {
+    if (!scholarshipId) {
+      const pendingJob = await this.queues.findFirstPendingJob(SCHOLARSHIP_QUALITY_SCORE_QUEUE);
+      if (pendingJob) {
+        return { jobId: pendingJob.id, status: pendingJob.state };
+      }
+    }
+
     const job = await this.queues.enqueueScholarshipQualityScore({ triggeredBy, scholarshipId });
     await this.syncLogs.createQueuedLog({
       jobId: String(job.id),
@@ -322,6 +388,23 @@ export class ScholarshipDiscoveryService {
       select: { id: true },
     });
 
+    const normalizedDeadline = this.toDate(scholarship.deadline);
+    const qualityScore = this.calculateQualityScore({
+      title: scholarship.title,
+      deadline: normalizedDeadline,
+      officialSourceUrl: scholarship.officialSourceUrl,
+      eligibilityCriteria: scholarship.eligibilityCriteria || null,
+      fundingAmount: scholarship.fundingAmount ?? null,
+      applicationUrl: scholarship.applicationUrl || scholarship.officialSourceUrl || null,
+    });
+    const automatedState = this.deriveAutomatedState({
+      currentStatus: existing?.status,
+      currentVerificationStatus: existing?.verificationStatus,
+      deadline: normalizedDeadline,
+      needsReview: duplicateMatches.length > 1,
+      qualityScore,
+    });
+
     const data: Prisma.ScholarshipUncheckedCreateInput = {
       title: scholarship.title,
       slug: existing?.slug || (await this.generateSlug(scholarship.title)),
@@ -340,7 +423,7 @@ export class ScholarshipDiscoveryService {
       isFullyFunded: Boolean(scholarship.isFullyFunded),
       applicationUrl: scholarship.applicationUrl || scholarship.officialSourceUrl,
       officialSourceUrl: scholarship.officialSourceUrl,
-      deadline: this.toDate(scholarship.deadline),
+      deadline: normalizedDeadline,
       applicationOpenDate: this.toDate(scholarship.applicationOpenDate),
       applicationCloseDate: this.toDate(scholarship.applicationCloseDate) || this.toDate(scholarship.deadline),
       eligibilityCriteria: scholarship.eligibilityCriteria || null,
@@ -352,12 +435,13 @@ export class ScholarshipDiscoveryService {
       sourceType: adapter.sourceType,
       sourceExternalId: scholarship.sourceExternalId || null,
       sourceUrl: scholarship.officialSourceUrl,
-      status: ScholarshipStatus.draft,
-      verificationStatus: ScholarshipVerificationStatus.pending,
-      isVerified: false,
-      isActive: false,
-      isExpired: false,
+      status: automatedState.status,
+      verificationStatus: automatedState.verificationStatus,
+      isVerified: automatedState.isVerified,
+      isActive: automatedState.isActive,
+      isExpired: automatedState.isExpired,
       lastSyncedAt: new Date(),
+      qualityScore,
       duplicateKey: scholarship.sourceExternalId || scholarship.officialSourceUrl,
       needsReview: duplicateMatches.length > 1,
     };
@@ -425,7 +509,7 @@ export class ScholarshipDiscoveryService {
     deadline: Date | null;
     officialSourceUrl?: string | null;
     eligibilityCriteria?: string | null;
-    fundingAmount?: Prisma.Decimal | null;
+    fundingAmount?: Prisma.Decimal | number | null;
     applicationUrl?: string | null;
   }) {
     let score = 0;
@@ -436,6 +520,64 @@ export class ScholarshipDiscoveryService {
     if (scholarship.fundingAmount) score += 15;
     if (scholarship.applicationUrl) score += 10;
     return Math.min(score, 100);
+  }
+
+  private deriveAutomatedState({
+    currentStatus,
+    currentVerificationStatus,
+    deadline,
+    needsReview,
+    qualityScore,
+  }: {
+    currentStatus?: ScholarshipStatus;
+    currentVerificationStatus?: ScholarshipVerificationStatus;
+    deadline?: Date | null;
+    needsReview: boolean;
+    qualityScore: number;
+  }) {
+    const now = new Date();
+    const isExpired = Boolean(deadline && deadline.getTime() < now.getTime());
+
+    if (currentVerificationStatus === ScholarshipVerificationStatus.rejected || currentStatus === ScholarshipStatus.closed) {
+      return {
+        verificationStatus: ScholarshipVerificationStatus.rejected,
+        status: ScholarshipStatus.closed,
+        isVerified: false,
+        isActive: false,
+        isExpired,
+      };
+    }
+
+    if (isExpired) {
+      return {
+        verificationStatus:
+          currentVerificationStatus === ScholarshipVerificationStatus.verified
+            ? ScholarshipVerificationStatus.verified
+            : ScholarshipVerificationStatus.pending,
+        status: ScholarshipStatus.expired,
+        isVerified: currentVerificationStatus === ScholarshipVerificationStatus.verified,
+        isActive: false,
+        isExpired: true,
+      };
+    }
+
+    if (currentVerificationStatus === ScholarshipVerificationStatus.verified || (!needsReview && qualityScore >= 60)) {
+      return {
+        verificationStatus: ScholarshipVerificationStatus.verified,
+        status: ScholarshipStatus.active,
+        isVerified: true,
+        isActive: true,
+        isExpired: false,
+      };
+    }
+
+    return {
+      verificationStatus: ScholarshipVerificationStatus.pending,
+      status: ScholarshipStatus.draft,
+      isVerified: false,
+      isActive: false,
+      isExpired: false,
+    };
   }
 
   private getAdapters(sourceTypes?: ScholarshipSourceType[]) {

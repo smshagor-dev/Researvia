@@ -64,6 +64,7 @@ export class AuthService {
       },
     });
 
+    await this.recordInitialCreditGrant(user.id, freePlan?.creditsPerMonth || 20, 'signup_free_plan');
     await this.ensureStudentAccessBootstrap(user);
 
     // Store email verification token
@@ -139,7 +140,7 @@ export class AuthService {
   async refresh(refreshToken: string, ip?: string, userAgent?: string) {
     let payload: any;
     try {
-      payload = this.jwt.verify(refreshToken, { secret: this.config.get('JWT_SECRET') });
+      payload = this.jwt.verify(refreshToken, { secret: this.getRefreshSecret() });
     } catch {
       throw new UnauthorizedException({ code: 'INVALID_REFRESH_TOKEN', message: 'Invalid refresh token' });
     }
@@ -244,7 +245,7 @@ export class AuthService {
     if (!valid) throw new UnauthorizedException({ code: 'WRONG_PASSWORD', message: 'Invalid password' });
 
     const secret = authenticator.generateSecret();
-    const otpAuthUrl = authenticator.keyuri(user.email, 'ProfCRM', secret);
+    const otpAuthUrl = authenticator.keyuri(user.email, 'ResearVia', secret);
     const qrCodeDataUrl = await QRCode.toDataURL(otpAuthUrl);
 
     const backupCodes = Array.from({ length: 10 }, () => this.encryption.randomToken(4));
@@ -325,6 +326,7 @@ export class AuthService {
         },
       });
 
+      await this.recordInitialCreditGrant(user.id, freePlan?.creditsPerMonth || 20, 'oauth_free_plan');
       await this.ensureStudentAccessBootstrap(user);
     }
 
@@ -368,7 +370,7 @@ export class AuthService {
 
     const refreshToken = this.jwt.sign(
       { sub: user.id, sessionId, type: 'refresh', rememberMe, tokenVersion },
-      { secret: this.config.get('JWT_SECRET'), expiresIn: refreshExpiresIn },
+      { secret: this.getRefreshSecret(), expiresIn: refreshExpiresIn },
     );
 
     // Store refresh token hash in Redis
@@ -423,5 +425,44 @@ export class AuthService {
       avatarUrl: user.avatarUrl,
       ...studentMeta,
     };
+  }
+
+  private async recordInitialCreditGrant(userId: string, amount: number, reason: string) {
+    const credits = await this.prisma.credits.findUnique({
+      where: { userId },
+      select: { id: true, balance: true },
+    });
+    if (!credits || amount <= 0) {
+      return;
+    }
+
+    const existing = await this.prisma.creditTransaction.findFirst({
+      where: {
+        userId,
+        type: 'bonus',
+        reason,
+      },
+      select: { id: true },
+    });
+    if (existing) {
+      return;
+    }
+
+    await this.prisma.creditTransaction.create({
+      data: {
+        userId,
+        walletId: credits.id,
+        amount,
+        type: 'bonus',
+        reason,
+        description: 'Initial free plan credits',
+        balanceAfter: credits.balance,
+        metadataJson: { source: reason } as Prisma.InputJsonValue,
+      },
+    });
+  }
+
+  private getRefreshSecret() {
+    return this.config.get('JWT_REFRESH_SECRET') || this.config.get('JWT_SECRET');
   }
 }

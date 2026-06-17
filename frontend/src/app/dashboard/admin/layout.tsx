@@ -23,6 +23,8 @@ import {
   Activity,
   Sparkles,
   CreditCard,
+  SlidersHorizontal,
+  TicketPercent,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { ThemeToggle } from '@/components/theme/ThemeToggle';
@@ -39,9 +41,11 @@ const navItems = [
   { href: '/imports', label: 'Imports', icon: Upload },
   { href: '/analytics', label: 'Analytics', icon: BarChart3 },
   { href: '/mailboxes', label: 'Mailboxes', icon: Mail },
+  { href: '/settings', label: 'System Settings', icon: SlidersHorizontal },
   { href: '/system', label: 'System Health', icon: Activity },
   { href: '/matches', label: 'AI Matches', icon: Sparkles },
   { href: '/billing', label: 'Billing', icon: CreditCard },
+  { href: '/billing#promos', label: 'Promos', icon: TicketPercent },
   { href: '/audit-logs', label: 'Audit Logs', icon: FileText },
 ];
 
@@ -75,7 +79,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                 <GraduationCap className="h-5 w-5 text-white" />
               </div>
               <div>
-                <p className="text-sm font-bold text-white">ProfCRM</p>
+                <p className="text-sm font-bold text-white">ResearVia</p>
                 <p className="text-xs font-semibold uppercase tracking-[0.22em] text-orange-300/90">Admin Panel</p>
               </div>
             </Link>

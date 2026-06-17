@@ -28,6 +28,11 @@ export class ProfessorSyncAdminService {
   ) {}
 
   async runDiscoverySync(adminId: string, dto: RunDiscoverySyncDto = {}) {
+    const pendingJob = await this.queueService.findFirstPendingJob(PROFESSOR_DISCOVERY_QUEUE);
+    if (pendingJob) {
+      return { jobId: pendingJob.id, queueName: PROFESSOR_DISCOVERY_QUEUE, status: pendingJob.state };
+    }
+
     const job = await this.queueService.enqueueDiscovery({
       ...dto,
       sourceTypes: dto.sourceTypes as DataSource[] | undefined,
@@ -46,6 +51,13 @@ export class ProfessorSyncAdminService {
   }
 
   async runProfileSync(adminId: string, professorId?: string) {
+    if (!professorId) {
+      const pendingJob = await this.queueService.findFirstPendingJob(PROFESSOR_PROFILE_SYNC_QUEUE);
+      if (pendingJob) {
+        return { jobId: pendingJob.id, queueName: PROFESSOR_PROFILE_SYNC_QUEUE, status: pendingJob.state };
+      }
+    }
+
     const job = await this.queueService.enqueueProfileSync({
       professorId,
       trigger: 'admin',
@@ -63,6 +75,13 @@ export class ProfessorSyncAdminService {
   }
 
   async runPublicationSync(adminId: string, professorId?: string) {
+    if (!professorId) {
+      const pendingJob = await this.queueService.findFirstPendingJob(PROFESSOR_PUBLICATION_SYNC_QUEUE);
+      if (pendingJob) {
+        return { jobId: pendingJob.id, queueName: PROFESSOR_PUBLICATION_SYNC_QUEUE, status: pendingJob.state };
+      }
+    }
+
     const job = await this.queueService.enqueuePublicationSync({
       professorId,
       trigger: 'admin',
@@ -127,6 +146,11 @@ export class ProfessorSyncAdminService {
   }
 
   async runDeduplication(adminId: string) {
+    const pendingJob = await this.queueService.findFirstPendingJob(PROFESSOR_DEDUPLICATION_QUEUE);
+    if (pendingJob) {
+      return { jobId: pendingJob.id, queueName: PROFESSOR_DEDUPLICATION_QUEUE, status: pendingJob.state };
+    }
+
     const job = await this.queueService.enqueueDeduplication({
       trigger: 'admin',
       requestedBy: adminId,

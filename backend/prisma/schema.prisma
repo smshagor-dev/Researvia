@@ -452,6 +452,19 @@ enum BillingCycle {
   yearly
 }
 
+enum PaymentProvider {
+  stripe
+  nowpayments
+}
+
+enum PaymentTransactionStatus {
+  pending
+  confirmed
+  failed
+  expired
+  cancelled
+}
+
 enum UsageMetricType {
   professor_reveal
   ai_generation
@@ -630,9 +643,12 @@ model User {
   cvParseLogs       CvParseLog[]
   usageMetrics      UsageMetric[]
   invoices          BillingInvoice[]
+  paymentTransactions PaymentTransaction[]
   subscriptionsOwned Team[] @relation("TeamOwner")
   teamMemberships   TeamMember[]
   couponRedemptions CouponRedemption[]
+  scholarshipUnlocks ScholarshipUnlock[]
+  opportunityUnlocks OpportunityUnlock[]
   sessions          ActiveSession[]
 
   @@index([status, deletedAt])
@@ -1027,6 +1043,17 @@ model MailSettings {
   updatedAt                DateTime @updatedAt @map("updated_at")
 
   @@map("mail_settings")
+}
+
+model SystemSetting {
+  key         String   @id @db.VarChar(191)
+  valueJson   Json?    @map("value_json")
+  description String?  @db.VarChar(500)
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@index([updatedAt])
+  @@map("system_settings")
 }
 
 model Country {
@@ -1446,6 +1473,7 @@ model Scholarship {
   country           Country?           @relation(fields: [countryId], references: [id])
   university        University?        @relation(fields: [universityId], references: [id])
   savedScholarships SavedScholarship[]
+  unlocks           ScholarshipUnlock[]
   sources           ScholarshipSource[]
 
   @@index([isActive, isExpired])
@@ -1542,6 +1570,7 @@ model Opportunity {
   department   Department?   @relation(fields: [departmentId], references: [id])
   professor    Professor?    @relation(fields: [professorId], references: [id])
   applications Application[]
+  unlocks      OpportunityUnlock[]
 
   @@index([type])
   @@index([countryId])
@@ -1553,6 +1582,38 @@ model Opportunity {
   @@index([qualityScore])
   @@fulltext([title])
   @@map("opportunities")
+}
+
+model ScholarshipUnlock {
+  id            String       @id @default(uuid()) @db.Char(36)
+  userId        String       @map("user_id") @db.Char(36)
+  scholarshipId String       @map("scholarship_id") @db.Char(36)
+  usageMetricId String?      @map("usage_metric_id") @db.Char(36)
+  unlockedAt    DateTime     @default(now()) @map("unlocked_at")
+
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  scholarship Scholarship @relation(fields: [scholarshipId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, scholarshipId])
+  @@index([userId, unlockedAt])
+  @@index([scholarshipId, unlockedAt])
+  @@map("scholarship_unlocks")
+}
+
+model OpportunityUnlock {
+  id            String      @id @default(uuid()) @db.Char(36)
+  userId        String      @map("user_id") @db.Char(36)
+  opportunityId String      @map("opportunity_id") @db.Char(36)
+  usageMetricId String?     @map("usage_metric_id") @db.Char(36)
+  unlockedAt    DateTime    @default(now()) @map("unlocked_at")
+
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  opportunity Opportunity @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, opportunityId])
+  @@index([userId, unlockedAt])
+  @@index([opportunityId, unlockedAt])
+  @@map("opportunity_unlocks")
 }
 
 model Application {
@@ -1809,6 +1870,7 @@ model SubscriptionPlan {
 
   subscriptions Subscription[]
   teams         Team[]
+  paymentTransactions PaymentTransaction[]
 
   @@map("subscription_plans")
 }
@@ -1828,6 +1890,7 @@ model Subscription {
   canceledAt           DateTime?          @map("canceled_at")
   cancelAtPeriodEnd    Boolean            @default(false) @map("cancel_at_period_end")
   endedAt              DateTime?          @map("ended_at")
+  lastCreditResetKey   String?            @map("last_credit_reset_key") @db.VarChar(20)
   metadata             Json?
   createdAt            DateTime           @default(now()) @map("created_at")
   updatedAt            DateTime           @updatedAt @map("updated_at")
@@ -1835,6 +1898,7 @@ model Subscription {
   user User             @relation(fields: [userId], references: [id], onDelete: Cascade)
   plan SubscriptionPlan @relation(fields: [planId], references: [id])
   invoices BillingInvoice[]
+  couponRedemptions CouponRedemption[]
 
   @@index([userId])
   @@index([status])
@@ -1912,6 +1976,7 @@ model BillingInvoice {
   status               InvoiceStatus @default(open)
   billedAt             DateTime?     @map("billed_at")
   paidAt               DateTime?     @map("paid_at")
+  creditGrantAppliedAt DateTime?     @map("credit_grant_applied_at")
   metadataJson         Json?         @map("metadata_json")
   createdAt            DateTime      @default(now()) @map("created_at")
   updatedAt            DateTime      @updatedAt @map("updated_at")
@@ -1923,6 +1988,30 @@ model BillingInvoice {
   @@index([subscriptionId, createdAt])
   @@index([status, createdAt])
   @@map("billing_invoices")
+}
+
+model PaymentTransaction {
+  id                String                   @id @default(uuid()) @db.Char(36)
+  userId            String                   @map("user_id") @db.Char(36)
+  provider          PaymentProvider
+  planId            String                   @map("plan_id") @db.Char(36)
+  amount            Decimal                  @db.Decimal(10, 2)
+  currency          String                   @db.VarChar(20)
+  cryptoCurrency    String?                  @map("crypto_currency") @db.VarChar(50)
+  providerPaymentId String?                  @unique @map("provider_payment_id") @db.VarChar(100)
+  providerInvoiceId String?                  @unique @map("provider_invoice_id") @db.VarChar(100)
+  status            PaymentTransactionStatus @default(pending)
+  metadataJson      Json?                    @map("metadata_json")
+  createdAt         DateTime                 @default(now()) @map("created_at")
+  updatedAt         DateTime                 @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  plan SubscriptionPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([provider, status, createdAt])
+  @@index([planId, createdAt])
+  @@map("payment_transactions")
 }
 
 model Coupon {
@@ -1950,13 +2039,20 @@ model CouponRedemption {
   couponId   String   @map("coupon_id") @db.Char(36)
   userId     String   @map("user_id") @db.Char(36)
   code       String   @db.VarChar(100)
+  subscriptionId String? @map("subscription_id") @db.Char(36)
+  stripeInvoiceId String? @map("stripe_invoice_id") @db.VarChar(100)
+  stripeCheckoutSessionId String? @map("stripe_checkout_session_id") @db.VarChar(100)
   createdAt  DateTime @default(now()) @map("created_at")
 
   coupon Coupon @relation(fields: [couponId], references: [id], onDelete: Cascade)
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subscription Subscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
 
+  @@unique([couponId, userId])
   @@index([couponId, createdAt])
   @@index([userId, createdAt])
+  @@index([subscriptionId])
+  @@index([stripeInvoiceId])
   @@map("coupon_redemptions")
 }
 

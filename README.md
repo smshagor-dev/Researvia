@@ -1,185 +1,341 @@
-# ProfCRM — Professor Outreach, Scholarship & Research CRM Platform
+# ResearVia
 
-A full-stack SaaS platform for academic outreach: discover professors, manage email campaigns, track scholarship applications, and leverage AI for research matching.
+ResearVia is a full-stack SaaS platform for academic outreach, scholarship discovery, application tracking, and AI-assisted research communication.
+
+The repository currently includes a Next.js frontend, a NestJS backend, Prisma/MySQL data models, Redis-backed queues, billing flows for Stripe and NOWPayments, and background workers for discovery, sync, and credit resets.
+
+## What Is Production-Ready vs Experimental
+
+- Production-oriented: authentication, user accounts, billing primitives, credits, Redis workers, storage integration, observability hooks, Docker images, and CI.
+- Experimental or data-dependent: professor discovery volume, scholarship corpus size, opportunity volume, delivery-rate claims, and any seeded demo metrics.
+
+No public marketing or setup document in this repo should claim a live dataset size unless you verify it from the deployed environment.
 
 ## Stack
 
 | Layer | Technology |
-|---|---|
+| --- | --- |
 | Frontend | Next.js 15, React 19, TypeScript, Tailwind CSS |
-| Backend | Node.js 22, NestJS 11 |
-| Database | MySQL 8.0 + Prisma ORM |
-| Cache / Queue | Redis 7 + BullMQ |
-| Storage | S3-compatible (Cloudflare R2) |
+| Backend | NestJS 11, Node.js 22 |
+| Database | MySQL 8 + Prisma |
+| Cache / Queues | Redis 7 + BullMQ |
+| Storage | Local or S3-compatible storage (AWS S3 / Cloudflare R2) |
 | Auth | JWT, Google OAuth, Microsoft OAuth, TOTP 2FA |
-| AI | Anthropic Claude (streaming) |
-| Billing | Stripe |
-| Infra | Docker, Nginx, GitHub Actions CI/CD |
+| Billing | Stripe, NOWPayments |
+| Observability | Sentry, Prometheus metrics, OpenTelemetry |
+| Infra | Docker Compose, Nginx, GitHub Actions |
 
-## Quick Start (Docker)
+## Repository Setup
 
 ```bash
-# 1. Clone repository
-git clone https://github.com/your-org/profcrm.git && cd profcrm
-
-# 2. Copy environment files
-cp backend/.env.example backend/.env
-
-# 3. Build and start all services
-docker compose up --build
-
-# 4. Seed demo data, if needed
-docker compose exec api npx prisma db seed
-
-# 5. Access the platform
-#   Frontend:   http://localhost:3000
-#   API:        http://localhost:3001/v1
-#   Swagger:    http://localhost:3001/api/docs
-#   Admin:      http://localhost:3000/admin/dashboard
+git clone https://github.com/<your-org>/researvia.git
+cd researvia
 ```
 
-**Default Admin:** `admin@profcrm.com` / `Admin@123456`
+Copy the backend bootstrap template before starting anything:
 
-## Local Development (without Docker)
+```bash
+cp backend/.env.example backend/.env
+```
+
+## Local Setup
+
+## Config Model
+
+ResearVia should follow this split:
+
+- `env / secret manager`: only bootstrap infrastructure and cryptographic secrets needed before the app can trust the database.
+- `admin panel + DB`: business config, integration behavior, operational toggles, tracking URLs, queue behavior, provider preferences, and other runtime settings.
+
+Examples that should stay bootstrap-only:
+
+- `DATABASE_URL`
+- `JWT_SECRET`
+- `JWT_REFRESH_SECRET`
+- `ENCRYPTION_KEY`
+- `REDIS_URL`
+- provider master secrets such as Stripe, NOWPayments, Google, Microsoft, S3/R2, Sentry, and AI API keys
+
+Examples that should be admin/DB-managed:
+
+- mail system settings
+- tracking base URL
+- queue concurrency and async email behavior
+- billing presentation behavior and provider enablement
+- discovery source endpoints and non-secret operational flags
+- cron expressions and sync schedules
+- storage/display behavior that does not require master credentials
 
 ### Prerequisites
-- Node.js 22+
-- MySQL 8.0
+
+- Node.js 22.x
+- npm 10+
+- MySQL 8
 - Redis 7
+- Docker Desktop or Docker Engine if you want containerized services
 
 ### Backend
 
 ```bash
 cd backend
-cp .env.example .env         # fill in DB_URL and REDIS_URL
 npm install
-npx prisma db seed
-npm run start:dev            # auto-runs pending migrations, http://localhost:3001
+npm run prisma:generate
+npm run prisma:migrate
+npm run prisma:seed
+npm run start:dev
 ```
+
+Backend defaults:
+
+- API: `http://localhost:3001/v1`
+- Swagger: `http://localhost:3001/api/docs`
+- Health: `http://localhost:3001/v1/health`
 
 ### Frontend
 
 ```bash
 cd frontend
 npm install
-npm run dev                  # http://localhost:3000
+npm run build
+npm run dev
 ```
 
-## Key Features
+Frontend default:
 
-### Discovery
-- **50,000+ professors** indexed from OpenAlex, ORCID, Crossref, ROR
-- Filter by country, university, research area, h-index, funding status
-- Verified institutional email addresses (domain-matched + MX-checked)
-- Professor profile pages with publications, research areas, AI match score
+- App: `http://localhost:3000`
 
-### Email CRM
-- Multi-account support: personal SMTP, Gmail OAuth, Outlook OAuth
-- Full conversation threading with inbound/outbound tracking
-- Open tracking via pixel, reply detection via inbox sync
-- Scheduled sending, drafts, attachment support
+## Docker Setup
 
-### AI Features
-- **Outreach email generation** — personalized to professor's research (streaming SSE)
-- **Follow-up generator** — context-aware based on thread history
-- **Research match score** — 0-100 compatibility score with breakdown
-- **Scholarship recommendations** — AI-ranked matching to your profile
+Development compose:
 
-### Scholarship Database
-- Fully funded, partially funded, stipend-only scholarships
-- Deadline tracking with color-coded urgency
-- Save and track application status
-- Email reminders before deadlines
-
-### Subscriptions
-| Plan | Price | Credits | Email Reveals |
-|---|---|---|---|
-| Free | $0 | 20/mo | 5/mo |
-| Starter | $9.99/mo | 100/mo | 20/mo |
-| Pro | $29.99/mo | 500/mo | 100/mo |
-| Enterprise | $99.99/mo | 2000/mo | Unlimited |
-
-## Project Structure
-
-```
-profcrm/
-├── backend/                    # NestJS API
-│   ├── src/
-│   │   ├── modules/            # Feature modules (25+)
-│   │   ├── shared/             # Prisma, Redis, Encryption
-│   │   ├── common/             # Guards, interceptors, decorators
-│   │   ├── cron/               # Scheduled jobs
-│   │   └── queues/             # BullMQ queue definitions
-│   └── prisma/
-│       ├── schema.prisma       # 30+ models
-│       └── seed.ts             # Initial data
-├── frontend/                   # Next.js App Router
-│   └── src/
-│       ├── app/
-│       │   ├── (auth)/         # Login, Register, Forgot Password
-│       │   ├── (dashboard)/    # User panel pages
-│       │   └── admin/          # Admin panel pages
-│       ├── lib/
-│       │   ├── api/            # Axios client + all API modules
-│       │   ├── hooks/          # React Query hooks
-│       │   └── stores/         # Zustand (auth store)
-│       └── components/         # Reusable components
-├── nginx/conf/                 # Nginx reverse proxy config
-├── docker-compose.yml          # Development
-├── docker-compose.prod.yml     # Production
-└── .github/workflows/          # CI/CD pipeline
-    └── deploy.yml
+```bash
+docker compose up --build
 ```
 
-## Environment Variables
+Useful commands:
 
-Copy `backend/.env.example` to `backend/.env`. Key variables:
-
-```env
-DATABASE_URL=mysql://profcrm:pass@localhost:3306/profcrm_db
-REDIS_URL=redis://localhost:6379
-JWT_SECRET=<32+ char secret>
-ENCRYPTION_KEY=<32 char hex>
-GOOGLE_CLIENT_ID=<optional>
-ANTHROPIC_API_KEY=<optional - enables AI features>
-STRIPE_SECRET_KEY=<optional - enables billing>
+```bash
+docker compose logs -f api
+docker compose logs -f frontend
+docker compose logs -f worker
+docker compose down
 ```
 
-All optional variables have sensible fallbacks (demo mode).
+Production compose image references are defined in [docker-compose.prod.yml](/abs/path/e:/project/email-marketing/profcrm/docker-compose.prod.yml).
 
-## API Documentation
+## Production Setup
 
-Swagger UI is available at `http://localhost:3001/api/docs` when running.
+### 1. Infrastructure
 
-Key endpoint groups:
-- `POST /v1/auth/register` — User registration
-- `POST /v1/auth/login` — Login (supports 2FA)
-- `GET /v1/professors` — Search professors
-- `POST /v1/professors/:id/reveal-email` — Reveal email (5 credits)
-- `GET /v1/scholarships` — Search scholarships
-- `POST /v1/ai/generate-outreach` — AI email generation (SSE stream)
-- `GET /v1/ai/match-score/:professorId` — Research match score
-- `GET /v1/email-threads` — Email CRM inbox
-- `POST /v1/subscriptions/checkout` — Start Stripe checkout
+- Provision MySQL 8 with backups enabled.
+- Provision Redis with persistence and authentication.
+- Provision an object store if you do not want local file storage.
+- Provision a public domain for the frontend and API.
+- Provision Stripe and NOWPayments accounts if billing is enabled.
+- Provision Gmail and Microsoft OAuth apps if external mailbox auth is enabled.
 
-## Data Sources
+### 2. Required Bootstrap Secrets
 
-| Source | Usage |
-|---|---|
-| [ROR](https://ror.org) | University/institution metadata |
-| [OpenAlex](https://openalex.org) | Professor profiles, publications, concepts |
-| [Crossref](https://crossref.org) | Publications, DOIs |
-| [ORCID](https://orcid.org) | Researcher identity and affiliations |
+Populate `backend/.env` or your deployment secret manager with at least:
 
-## Security
+- `DATABASE_URL`
+- `JWT_SECRET`
+- `JWT_REFRESH_SECRET`
+- `ENCRYPTION_KEY`
+- `FRONTEND_URL`
+- `APP_URL` or `BACKEND_URL`
+- `REDIS_URL`
 
-- JWT RS256 access tokens (15-min TTL) + refresh token rotation
-- AES-256-GCM field encryption for SMTP passwords and OAuth tokens
-- TOTP-based 2FA with backup codes
-- Rate limiting per IP and per user (Redis-backed)
-- Soft-delete with PII anonymization for GDPR compliance
-- Email verification domain + MX record matching
+Everything else that is not required to boot the app should be treated as admin/DB-managed runtime config.
 
-## License
+### 3. Backend Build + Migrations
 
-MIT — see [LICENSE](LICENSE)
+```bash
+cd backend
+npm ci
+npm run prisma:generate
+npm run prisma:migrate
+npm run build
+```
+
+### 4. Frontend Build
+
+```bash
+cd frontend
+npm ci
+npm run build
+```
+
+The frontend is configured for Next.js standalone output. CI should verify that `.next/standalone/server.js` exists after build.
+
+## Deployment Guide
+
+### GitHub Actions + GHCR
+
+The repo includes a CI/CD workflow in [.github/workflows/deploy.yml](/abs/path/e:/project/email-marketing/profcrm/.github/workflows/deploy.yml) that should:
+
+- install dependencies
+- generate Prisma client
+- run backend tests
+- build frontend and backend
+- build Docker images
+- verify standalone Next.js output
+- optionally push images and deploy on `main`
+
+### VPS / Docker Compose
+
+1. Build or pull the backend and frontend images.
+2. Copy `docker-compose.prod.yml` to the server.
+3. Provide `.env.production` with the runtime secrets.
+4. Run database migrations before traffic cutover.
+5. Start `api`, `worker`, `frontend`, and `nginx`.
+6. Confirm `/v1/health`, frontend load, Redis connectivity, and billing webhooks.
+
+## Billing Setup
+
+### Stripe
+
+Required bootstrap secrets:
+
+- `STRIPE_SECRET_KEY`
+- `STRIPE_WEBHOOK_SECRET`
+- `STRIPE_PRICE_ID_STARTER_MONTHLY`
+- `STRIPE_PRICE_ID_STARTER_YEARLY`
+- `STRIPE_PRICE_ID_PRO_YEARLY`
+
+Price/product mapping is better kept in DB/admin config long term.
+
+### Stripe Webhook Setup
+
+1. In Stripe, add a webhook endpoint pointing to `https://<api-domain>/v1/webhooks/stripe`.
+2. Subscribe at minimum to:
+   - `checkout.session.completed`
+   - `invoice.paid`
+   - `invoice.payment_failed`
+   - `customer.subscription.updated`
+   - `customer.subscription.deleted`
+3. Save the signing secret to `STRIPE_WEBHOOK_SECRET`.
+4. Trigger a test event and verify the subscription event queue receives a job.
+
+### NOWPayments Setup
+
+Required bootstrap secrets:
+
+- `NOWPAYMENTS_API_KEY`
+- `NOWPAYMENTS_IPN_SECRET`
+
+Operational values that should ideally move to admin/DB:
+
+- `NOWPAYMENTS_API_URL`
+- `NOWPAYMENTS_SUPPORTED_CURRENCIES`
+- `NOWPAYMENTS_SUCCESS_URL`
+- `NOWPAYMENTS_CANCEL_URL`
+- `NOWPAYMENTS_IPN_CALLBACK_URL`
+
+Set the IPN callback URL to `https://<api-domain>/v1/webhooks/nowpayments` unless you intentionally override it.
+
+## Redis Worker Setup
+
+The worker process runs `node dist/workers/index.js`.
+
+For Docker Compose production:
+
+- keep `api` and `worker` as separate processes
+- point both to the same `DATABASE_URL`
+- point both to the same `REDIS_URL`
+
+Before launch, verify:
+
+- queue creation works
+- jobs transition to completed
+- worker heartbeat records are updating
+- stuck-job thresholds are sane for your traffic profile
+
+## Admin-Managed Settings
+
+The repo already exposes admin-managed mail settings via:
+
+- `GET /v1/admin/mail-settings`
+- `POST /v1/admin/mail-settings`
+
+Current DB-backed admin settings include:
+
+- system mailbox domain and SMTP/IMAP hosts
+- mailbox provisioning toggle
+- cPanel integration values
+- email queue enablement
+- async email sending toggle
+- email send concurrency
+- mailbox sync concurrency
+- tracking base URL
+
+Additional DB-backed runtime settings already wired:
+
+- `billing.nowpayments.api_url`
+- `billing.nowpayments.supported_currencies`
+- `billing.nowpayments.success_url`
+- `billing.nowpayments.cancel_url`
+- `billing.nowpayments.ipn_callback_url`
+- `billing.stripe.price_ids.<planSlug>.<monthly|yearly>`
+- `email.allow_fallback`
+- `ai.provider`
+- `ai.anthropic.model`
+- `discovery.openalex.base_url`
+- `discovery.openalex.mailto`
+- `scholarships.sources.<source>.endpoint`
+- `app.public_backend_url`
+- `storage.public_base_url`
+
+If you want the platform to become fully admin-configured, the next step is to introduce a broader `system_settings` domain for billing, discovery, cron, storage, and integration behavior.
+
+## Troubleshooting
+
+- `Prisma migrate deploy` fails: confirm MySQL is reachable and `DATABASE_URL` includes the correct schema and credentials.
+- Redis-related startup failures: set `REDIS_URL` or `REDIS_HOST`/`REDIS_PORT`; production requires Redis.
+- Stripe checkout returns demo mode: `STRIPE_SECRET_KEY` is missing.
+- NOWPayments webhook rejected: verify the raw body is preserved and `NOWPAYMENTS_IPN_SECRET` matches the dashboard value.
+- Frontend build succeeds but container fails: confirm standalone output exists and `server.js` is copied from `.next/standalone`.
+- OAuth login fails: re-check callback URLs, client IDs, client secrets, and consent-screen publishing state.
+- Email sending fails: verify account credentials, daily limits, and the selected provider path (`system`, `smtp`, `gmail`, or `outlook`).
+
+## GitHub Repository Readiness
+
+### Repository Description Suggestion
+
+`ResearVia helps students discover professors, scholarships, and research opportunities with outreach workflows, application tracking, and usage-based billing.`
+
+### Suggested Topics
+
+`nextjs`, `nestjs`, `prisma`, `mysql`, `redis`, `bullmq`, `stripe`, `nowpayments`, `saas`, `edtech`, `research`, `academic-outreach`
+
+### Release Checklist
+
+- Confirm branding is consistently `ResearVia`.
+- Regenerate Prisma client and apply all production migrations.
+- Build backend, frontend, and Docker images from a clean checkout.
+- Verify Stripe and NOWPayments webhook endpoints in staging.
+- Verify worker heartbeats, queue processing, and scheduled jobs.
+- Validate OAuth redirect URIs for Google and Microsoft.
+- Confirm Sentry DSN, traces sample rate, and alert routing.
+- Confirm object storage bucket, credentials, and upload permissions.
+- Review seeded demo data for public exposure risk.
+- Tag the release and attach rollout notes.
+
+### Public Beta Checklist
+
+- Remove unsupported dataset-size and performance claims.
+- Replace placeholder domains, email addresses, and clone URLs.
+- Verify signup, login, password reset, and 2FA flows.
+- Verify paid checkout, failed payment handling, coupon redemption, and crypto confirmation.
+- Verify monthly credit reset idempotency.
+- Verify professor, scholarship, and opportunity unlock billing protections.
+- Verify daily email send limits and AI credit deductions.
+- Verify legal pages, support contact, and incident owner are configured.
+
+## Environment Reference
+
+The full backend environment template lives in [backend/.env.example](/abs/path/e:/project/email-marketing/profcrm/backend/.env.example).
+
+## Additional Launch Notes
+
+Launch checklists and public-beta prep notes are in [docs/launch-readiness.md](/abs/path/e:/project/email-marketing/profcrm/docs/launch-readiness.md).

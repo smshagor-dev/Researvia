@@ -1,8 +1,9 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  output: 'standalone',
   images: {
-    domains: ['localhost', 'api.profcrm.com', 'r2.cloudflarestorage.com'],
+    domains: ['localhost', 'api.researvia.com', 'r2.cloudflarestorage.com'],
     unoptimized: true,
   },
   env: {

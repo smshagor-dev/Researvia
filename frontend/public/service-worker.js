@@ -7,7 +7,7 @@ self.addEventListener('activate', (event) => {
     caches.keys().then((keys) =>
       Promise.all(
         keys
-          .filter((key) => key.startsWith('profcrm-static-') && key !== 'profcrm-static-v2')
+          .filter((key) => key.startsWith('researvia-static-') && key !== 'researvia-static-v2')
           .map((key) => caches.delete(key)),
       ),
     ).then(() => self.clients.claim()),
@@ -40,7 +40,7 @@ self.addEventListener('fetch', (event) => {
   }
 
   event.respondWith(
-    caches.open('profcrm-static-v2').then(async (cache) => {
+    caches.open('researvia-static-v2').then(async (cache) => {
       const cached = await cache.match(request);
       if (cached) {
         return cached;

@@ -31,7 +31,7 @@ export function DashboardPreview() {
             <span className="h-3 w-3 rounded-full bg-amber-400" />
             <span className="h-3 w-3 rounded-full bg-emerald-500" />
           </div>
-          <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">ProfCRM workspace</span>
+          <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">ResearVia workspace</span>
         </div>
         <div className="p-4 sm:p-6">
           <div className="mb-5 flex flex-col justify-between gap-3 sm:flex-row sm:items-center">

@@ -17,6 +17,9 @@ import {
 import { PrismaService } from '../../shared/prisma/prisma.service';
 import { PaginationService } from '../../shared/pagination/pagination.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { CreditsService } from '../credits/credits.service';
+import { UsageMeteringService } from '../billing/usage-metering.service';
+import { ACTION_CREDIT_COSTS } from '../billing/billing.constants';
 import {
   CreateApplicationDto,
   CreateInterviewDto,
@@ -70,6 +73,8 @@ export class OpportunitiesService {
     private readonly prisma: PrismaService,
     private readonly pagination: PaginationService,
     private readonly notifications: NotificationsService,
+    private readonly credits: CreditsService,
+    private readonly usage: UsageMeteringService,
   ) {}
 
   async findAll(filters: any, userId?: string) {
@@ -132,8 +137,13 @@ export class OpportunitiesService {
     }
 
     if (!userId) {
-      return opportunity;
+      return this.toLockedOpportunityResponse(opportunity, false);
     }
+
+    const unlock = await this.prisma.opportunityUnlock.findUnique({
+      where: { userId_opportunityId: { userId, opportunityId: opportunity.id } },
+      select: { id: true, unlockedAt: true },
+    });
 
     const [application, readiness, fit] = await Promise.all([
       this.prisma.application.findUnique({
@@ -153,12 +163,65 @@ export class OpportunitiesService {
       this.computeOpportunityFit(userId, opportunity),
     ]);
 
-    return {
+    const response = {
       ...opportunity,
+      access: {
+        requiresUnlock: !unlock,
+        isUnlocked: Boolean(unlock),
+        unlockCost: ACTION_CREDIT_COSTS.opportunity_unlock,
+        unlockedAt: unlock?.unlockedAt || null,
+      },
       currentApplication: application,
       readiness,
       fit,
       interviewPreparation: this.buildInterviewPreparation(opportunity),
+    };
+
+    return unlock ? response : this.toLockedOpportunityResponse(response, true);
+  }
+
+  async unlock(userId: string, opportunityId: string) {
+    const opportunity = await this.prisma.opportunity.findUnique({
+      where: { id: opportunityId },
+      select: { id: true, title: true, status: true, verificationStatus: true },
+    });
+    if (!opportunity) {
+      throw new NotFoundException('Opportunity not found');
+    }
+
+    const existing = await this.prisma.opportunityUnlock.findUnique({
+      where: { userId_opportunityId: { userId, opportunityId } },
+      select: { id: true, unlockedAt: true },
+    });
+    if (existing) {
+      return {
+        unlocked: true,
+        alreadyUnlocked: true,
+        unlockedAt: existing.unlockedAt,
+      };
+    }
+
+    await this.usage.assertWithinLimit(userId, 'opportunity_unlock');
+    await this.prisma.$transaction(async (tx) => {
+      await this.credits.adjustWithTransaction(tx, userId, -ACTION_CREDIT_COSTS.opportunity_unlock, {
+        type: 'opportunity_unlock',
+        reason: 'opportunity_unlock',
+        description: `Opportunity unlock: ${opportunity.title}`,
+        referenceId: opportunityId,
+        referenceType: 'opportunities',
+        allowNegative: false,
+        createIfMissing: false,
+      });
+      await tx.opportunityUnlock.create({
+        data: { userId, opportunityId },
+      });
+    });
+    await this.usage.recordUsage(userId, 'opportunity_unlock');
+
+    return {
+      unlocked: true,
+      alreadyUnlocked: false,
+      creditsCharged: ACTION_CREDIT_COSTS.opportunity_unlock,
     };
   }
 
@@ -940,5 +1003,25 @@ export class OpportunitiesService {
 
   labelize(value: string) {
     return value.replace(/_/g, ' ');
+  }
+
+  private toLockedOpportunityResponse(opportunity: any, authenticated: boolean) {
+    return {
+      ...opportunity,
+      description: null,
+      requirements: null,
+      officialUrl: null,
+      sourceUrl: null,
+      currentApplication: null,
+      readiness: null,
+      fit: null,
+      interviewPreparation: null,
+      access: {
+        requiresUnlock: true,
+        isUnlocked: false,
+        unlockCost: ACTION_CREDIT_COSTS.opportunity_unlock,
+        authenticated,
+      },
+    };
   }
 }

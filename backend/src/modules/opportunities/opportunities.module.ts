@@ -13,6 +13,8 @@ import { OpportunityCronService } from './opportunity-cron.service';
 import { OpportunityDiscoveryService } from './opportunity-discovery.service';
 import { OpportunitiesController } from './opportunities.controller';
 import { OpportunitiesService } from './opportunities.service';
+import { CreditsModule } from '../credits/credits.module';
+import { BillingModule } from '../billing/billing.module';
 
 @Module({
   imports: [
@@ -25,6 +27,8 @@ import { OpportunitiesService } from './opportunities.service';
     NotificationsModule,
     QueuesModule,
     SyncLogsModule,
+    CreditsModule,
+    BillingModule,
   ],
   controllers: [
     OpportunitiesController,

@@ -1,4 +1,4 @@
-import { Controller, Get, Param, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../../common/decorators';
 import { JwtAuthGuard, OptionalJwtGuard } from '../../common/guards/jwt-auth.guard';
@@ -19,5 +19,12 @@ export class OpportunitiesController {
   @UseGuards(OptionalJwtGuard)
   findOne(@Param('id') id: string, @CurrentUser() user?: any) {
     return this.opportunities.findOne(id, user?.id);
+  }
+
+  @Post(':id/unlock')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  unlock(@Param('id') id: string, @CurrentUser('id') userId: string) {
+    return this.opportunities.unlock(userId, id);
   }
 }
