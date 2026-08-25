@@ -12,8 +12,9 @@ const studentPublicationSchema = new Schema({
   sourceId: { type: String, default: "", trim: true, maxlength: 300 },
   verified: { type: Boolean, default: false }
 }, { timestamps: true, versionKey: false, strict: "throw" });
-studentPublicationSchema.index({ userId: 1, doi: 1 }, { unique: true, sparse: true });
-studentPublicationSchema.index({ userId: 1, source: 1, sourceId: 1 }, { unique: true, sparse: true });
+studentPublicationSchema.index({ userId: 1, doi: 1 });
+studentPublicationSchema.index({ userId: 1, source: 1, sourceId: 1 });
+studentPublicationSchema.index({ userId: 1, publicationDate: -1 });
 
 export type StudentPublicationDocument = InferSchemaType<typeof studentPublicationSchema>;
 export const StudentPublication = (models.StudentPublication as Model<StudentPublicationDocument> | undefined) ?? model<StudentPublicationDocument>("StudentPublication", studentPublicationSchema);
