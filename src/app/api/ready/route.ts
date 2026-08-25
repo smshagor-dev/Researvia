@@ -1,11 +1,13 @@
 import mongoose from "mongoose";
-import { apiError, apiSuccess } from "@/lib/api-response";
+import { apiFailure, apiSuccess, getRequestId } from "@/lib/api-response";
 import { connectDatabase } from "@/server/db/mongoose";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+export async function GET(request: Request) {
+  const requestId = getRequestId(request);
+
   try {
     await connectDatabase();
     const db = mongoose.connection.db;
@@ -14,6 +16,6 @@ export async function GET() {
 
     return apiSuccess({ status: "ready", database: "connected" });
   } catch {
-    return apiError("INTERNAL_ERROR", "Service is not ready", 503);
+    return apiFailure("INTERNAL_ERROR", "Service is not ready", 503, requestId);
   }
 }
