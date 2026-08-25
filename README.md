@@ -1,103 +1,111 @@
 # ResearVia
 
-ResearVia is a free academic discovery and application-management platform for students. The production rebuild uses one Next.js full-stack codebase with MongoDB.
+ResearVia is a free academic discovery, outreach, and application-management platform for students. The production rebuild uses one Next.js full-stack codebase with MongoDB.
 
 ## Product promise
 
-Student functionality is free. ResearVia does not require subscriptions, checkout, billing, paid credits, or a premium tier.
+Student functionality is free. ResearVia has no subscription, checkout, billing, paid credits, premium tier, or required paid AI service.
 
-## Current architecture
+## Architecture
 
-Development happens directly on `main`. The previous split frontend/backend implementation remains available in Git history, while the current tree is the clean Next.js + MongoDB rebuild.
-
-### Implemented foundation
-
-- Next.js 16 App Router full-stack application
-- React 19 + strict TypeScript
+- Next.js 16 App Router + React 19 + strict TypeScript
 - MongoDB + Mongoose
-- Zod boundary/environment validation
-- production security-header baseline
-- health and readiness endpoints
-- non-root multi-stage Docker image
-- GitHub Actions lint/typecheck/test/build pipeline
-- MongoDB 8-backed CI integration testing
+- Node.js runtime and server-only service modules
+- Zod validation at API/config boundaries
+- MongoDB-backed durable jobs; no mandatory Redis
+- MongoDB GridFS for private student documents
+- standards-compliant SMTP for account verification and recovery
+- optional Google/Microsoft OAuth email integrations
+- deterministic recommendation/writing fallbacks with optional OpenAI-compatible AI provider
+- GitHub Actions quality pipeline and non-root Docker image
 
-### Authentication implemented
+Development currently happens directly on `main`; the previous split frontend/backend implementation remains available in Git history.
 
-- Student registration
-- real SMTP email verification
-- verification resend
-- verified-account login gate
-- secure opaque HttpOnly cookie sessions
-- remember-me sessions
-- logout and current-user endpoint
-- forgot password and single-use reset links
-- password reset with active-session revocation
-- MongoDB-backed auth rate limiting
-- same-origin request protection
-- auth lifecycle integration tests
+## Student platform
 
-See [docs/authentication.md](docs/authentication.md).
+### Authentication and account security
 
-### Student onboarding and academic profile implemented
+- registration and verified-account login
+- real SMTP email verification and resend
+- forgot/reset password with single-use tokens and session revocation
+- opaque HttpOnly cookie sessions and remember-me sessions
+- MongoDB-backed auth rate limiting and same-origin protection
+- TOTP two-factor authentication
+- encrypted TOTP secret storage
+- ten single-use recovery codes
+- login-time TOTP/recovery challenge
+- security settings UI
 
-- four-step academic onboarding flow
-- academic background, current degree and study field
-- research interests, skills and languages
-- target degrees, countries and funding preferences
-- preferred research areas
-- optional website, LinkedIn, GitHub, Google Scholar and ORCID links
-- private/recommendation-only profile-use setting
-- server-validated onboarding completion
-- profile completion score
-- authenticated profile read/update API
-- production MongoDB profile indexes
-- profile lifecycle integration tests
-- professional responsive student dashboard shell
-- editable academic profile page
+### Academic profile and discovery
 
-See [docs/profile-onboarding.md](docs/profile-onboarding.md).
+- four-step academic onboarding
+- academic background, research interests, skills, languages, target degrees/countries, funding preferences, and academic links
+- University directory/detail/filtering
+- Professor directory/detail/filtering
+- Scholarship directory/detail/filtering and trustworthy deadline states
+- Opportunity directory/detail/filtering
+- source/provenance metadata and published-record visibility gates
 
-### Academic discovery implemented
+### Organization and applications
 
-- University directory, filters, pagination and detail pages
-- Professor directory, filters, pagination and detail pages
-- Scholarship directory, funding/deadline filters, pagination and detail pages
-- Academic opportunity directory, type/research/deadline filters, pagination and detail pages
-- only published records are exposed
-- source/provenance metadata on discovery records
-- production MongoDB search/index provisioning
-- source-backed contact/application links only
-- deadline state derived as Open, Closing soon, Closed, or Unknown without fabricating missing dates
-- discovery integration tests
+- saved professors, universities, scholarships, and opportunities
+- collections, notes, tags, duplicate-safe saves, and owner-only access
+- scholarship/opportunity comparison
+- application tracker with manual or source-backed entries
+- stages, deadlines, timeline, notes, tasks, list and Kanban-style views
 
-See [docs/discovery.md](docs/discovery.md) and [docs/scholarships-opportunities.md](docs/scholarships-opportunities.md).
+### Documents
 
-### Saved items implemented
+- private CV, transcript, SOP, proposal, and other document storage
+- MongoDB GridFS
+- owner-only read/delete
+- MIME/type and size validation
+- PDF/DOC/DOCX/TXT support
 
-- Save professors, universities, scholarships and opportunities
-- duplicate-safe idempotent saving
-- personal collections, notes and tags
-- filters by item type and collection
-- authenticated owner-only update/delete behavior
-- IDOR regression coverage
-- Save action connected from all discovery detail pages
+### Email accounts and professor outreach
 
-See [docs/saved-items.md](docs/saved-items.md).
+- Gmail and Microsoft OAuth connection with PKCE/state validation
+- encrypted provider access/refresh tokens and token refresh
+- provider-backed sending and message metadata synchronization
+- professor outreach drafts/campaigns
+- server-resolved public professor contact data
+- scheduled sends, retries, automatic follow-ups, and reply reconciliation
+- no fake inbox or fake send success
 
-## UI baseline
+### Recommendations and writing
 
-The application uses a professional Next.js dashboard/authentication visual baseline inspired by the Vercel Next.js Admin Dashboard and shadcn/ui patterns, adapted to ResearVia. The template's Postgres/auth implementation is not used.
+- deterministic professor matching
+- deterministic scholarship/opportunity recommendations
+- explainable match score, matched reasons, gaps, and actions
+- email/SOP/proposal writing tools
+- deterministic/template fallback works with AI disabled
+- optional OpenAI-compatible AI endpoint enhancement
+- UI distinguishes deterministic output from AI-generated output
 
-## Next production modules
+### Notifications and durable work
 
-Comparison and the application tracker are next, followed by outreach/email accounts, MongoDB-backed jobs, notifications, GridFS documents, deterministic recommendations with optional free AI adapters, admin, 2FA, expanded security hardening, Playwright E2E, data import/provenance, and production operations.
+- notification center and unread state
+- MongoDB-backed durable queue with leases, retries, exponential backoff, idempotency keys, stale-lock recovery, and job cancellation/retry controls
+- worker process via `npm run worker`
+- queue processors for outreach, follow-ups, email sync, and data imports
 
-## Requirements
+## Administration
 
-- Node.js 22+ (Node.js 24 recommended)
-- MongoDB Atlas or self-hosted MongoDB
-- Standards-compliant SMTP for account verification/password recovery
+Roles are `STUDENT`, `ADMIN`, and `SUPER_ADMIN`.
+
+Admin console includes:
+
+- operational overview
+- user search and account review
+- SUPER_ADMIN-only role/status mutations with self-lockout protection
+- academic content moderation and publish/archive controls
+- CSV/JSON import preview, validation, confirmation, and queued processing
+- OpenAlex university/professor discovery import preview
+- background job inspection/retry/cancel
+- bounded audit log display
+- server-side RBAC and audit records for sensitive changes
+
+Imported records are `DRAFT` by default and are not student-visible until an administrator publishes them.
 
 ## Environment
 
@@ -110,23 +118,29 @@ Core runtime values:
 - `TOKEN_ENCRYPTION_KEY`
 - `APP_URL`
 
-Verification/recovery additionally require SMTP configuration.
+Account verification/recovery requires SMTP values. Gmail/Microsoft integrations are optional and activate only when their client credentials are configured. AI is optional and the core platform works with `AI_PROVIDER=disabled`.
 
 ## Commands
 
 ```bash
 npm install
 npm run dev
+npm run worker
 npm run lint
 npm run typecheck
 npm test
 npm run build
+npm run check
 ```
 
 ## Health
 
 - `GET /api/health` — process health
 - `GET /api/ready` — MongoDB readiness
+
+## Production deployment
+
+Run the Next.js web process and at least one worker process against the same MongoDB database. Use HTTPS in production, configure SMTP, and configure OAuth/AI credentials only for integrations you want to enable. The application does not require a paid infrastructure provider.
 
 ## Documentation
 
@@ -136,7 +150,8 @@ npm run build
 - [University and professor discovery](docs/discovery.md)
 - [Scholarships and opportunities](docs/scholarships-opportunities.md)
 - [Saved items](docs/saved-items.md)
+- [Platform operations](docs/platform-operations.md)
 
-## Status
+## Validation policy
 
-Authentication, onboarding/profile, core academic discovery, scholarships/opportunities, and saved-item organization are implemented. The complete product remains under active module-by-module production development; later modules should not be treated as complete until their implementation and acceptance tests land.
+A feature is not considered production-validated until lint, TypeScript checks, automated tests, and the production build pass in CI. Integration credentials are never simulated as successful production connections.
