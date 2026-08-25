@@ -58,13 +58,40 @@ See [docs/authentication.md](docs/authentication.md).
 
 See [docs/profile-onboarding.md](docs/profile-onboarding.md).
 
+### Academic discovery implemented
+
+- University directory, filters, pagination and detail pages
+- Professor directory, filters, pagination and detail pages
+- Scholarship directory, funding/deadline filters, pagination and detail pages
+- Academic opportunity directory, type/research/deadline filters, pagination and detail pages
+- only published records are exposed
+- source/provenance metadata on discovery records
+- production MongoDB search/index provisioning
+- source-backed contact/application links only
+- deadline state derived as Open, Closing soon, Closed, or Unknown without fabricating missing dates
+- discovery integration tests
+
+See [docs/discovery.md](docs/discovery.md) and [docs/scholarships-opportunities.md](docs/scholarships-opportunities.md).
+
+### Saved items implemented
+
+- Save professors, universities, scholarships and opportunities
+- duplicate-safe idempotent saving
+- personal collections, notes and tags
+- filters by item type and collection
+- authenticated owner-only update/delete behavior
+- IDOR regression coverage
+- Save action connected from all discovery detail pages
+
+See [docs/saved-items.md](docs/saved-items.md).
+
 ## UI baseline
 
 The application uses a professional Next.js dashboard/authentication visual baseline inspired by the Vercel Next.js Admin Dashboard and shadcn/ui patterns, adapted to ResearVia. The template's Postgres/auth implementation is not used.
 
 ## Next production modules
 
-Universities and professors are the next core discovery modules, followed by scholarships, opportunities, saved items, comparison, application tracking, outreach/email accounts, MongoDB-backed jobs, notifications, GridFS documents, deterministic recommendations with optional free AI adapters, admin, 2FA, expanded security hardening, Playwright E2E, data import/provenance, and production operations.
+Comparison and the application tracker are next, followed by outreach/email accounts, MongoDB-backed jobs, notifications, GridFS documents, deterministic recommendations with optional free AI adapters, admin, 2FA, expanded security hardening, Playwright E2E, data import/provenance, and production operations.
 
 ## Requirements
 
@@ -106,7 +133,10 @@ npm run build
 - [Architecture](docs/architecture.md)
 - [Authentication](docs/authentication.md)
 - [Student profile and onboarding](docs/profile-onboarding.md)
+- [University and professor discovery](docs/discovery.md)
+- [Scholarships and opportunities](docs/scholarships-opportunities.md)
+- [Saved items](docs/saved-items.md)
 
 ## Status
 
-Authentication and the student onboarding/profile foundation are implemented. The complete product remains under active module-by-module production development; later product modules should not be treated as complete until their implementation and acceptance tests land.
+Authentication, onboarding/profile, core academic discovery, scholarships/opportunities, and saved-item organization are implemented. The complete product remains under active module-by-module production development; later modules should not be treated as complete until their implementation and acceptance tests land.
