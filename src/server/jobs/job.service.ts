@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { connectDatabase } from "@/server/db/mongoose";
+import { AppError } from "@/server/errors/AppError";
 import { Job } from "@/server/models/Job";
 
 export async function enqueueJob(input: {
@@ -63,4 +64,26 @@ export async function failJob(jobId: string, attempts: number, maxAttempts: numb
 export async function listJobs(limit = 100) {
   await connectDatabase();
   return Job.find().sort({ createdAt: -1 }).limit(Math.min(limit, 200)).lean();
+}
+
+export async function retryJob(jobId: string) {
+  await connectDatabase();
+  const job = await Job.findOneAndUpdate(
+    { _id: jobId, status: { $in: ["FAILED", "RETRYING"] } },
+    { $set: { status: "PENDING", availableAt: new Date(), lockedAt: null, lockedBy: null, lastError: null }, $setOnInsert: {} },
+    { new: true }
+  ).lean();
+  if (!job) throw new AppError("JOB_NOT_RETRYABLE", 400, "Only failed or retrying jobs can be retried.");
+  return job;
+}
+
+export async function cancelJob(jobId: string) {
+  await connectDatabase();
+  const job = await Job.findOneAndUpdate(
+    { _id: jobId, status: { $in: ["PENDING", "RETRYING"] } },
+    { $set: { status: "CANCELLED", lockedAt: null, lockedBy: null } },
+    { new: true }
+  ).lean();
+  if (!job) throw new AppError("JOB_NOT_CANCELLABLE", 400, "Only pending or retrying jobs can be cancelled.");
+  return job;
 }
