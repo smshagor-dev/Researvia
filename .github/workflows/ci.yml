@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main, full-platform-build]
+    branches: [main]
   pull_request:
     branches: [main]
 
@@ -12,7 +12,23 @@ permissions:
 jobs:
   quality:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
+    env:
+      NODE_ENV: test
+      APP_URL: http://localhost:3000
+      MONGODB_URI: mongodb://127.0.0.1:27017/researvia_ci
+      SESSION_SECRET: ci-session-secret-value-at-least-32-characters
+      TOKEN_ENCRYPTION_KEY: ci-token-encryption-value-at-least-32-chars
+    services:
+      mongodb:
+        image: mongo:8.0
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.runCommand({ ping: 1 }).ok'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -24,8 +40,5 @@ jobs:
       - run: npm test
       - name: Production build
         env:
-          MONGODB_URI: mongodb://127.0.0.1:27017/researvia_ci
-          SESSION_SECRET: ci-session-secret-value-at-least-32-characters
-          TOKEN_ENCRYPTION_KEY: ci-token-encryption-value-at-least-32-chars
-          APP_URL: http://localhost:3000
+          NODE_ENV: production
         run: npm run build
