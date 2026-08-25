@@ -1,9 +1,8 @@
-import type { FilterQuery } from "mongoose";
 import type { OpportunitySearchInput, ScholarshipSearchInput } from "@/schemas/opportunities";
 import { prepareOpportunityDatabase } from "@/server/db/opportunity-indexes";
 import { AppError } from "@/server/errors/AppError";
-import { Opportunity, type OpportunityDocument } from "@/server/models/Opportunity";
-import { Scholarship, type ScholarshipDocument } from "@/server/models/Scholarship";
+import { Opportunity } from "@/server/models/Opportunity";
+import { Scholarship } from "@/server/models/Scholarship";
 
 export type DeadlineState = "OPEN" | "CLOSING_SOON" | "CLOSED" | "UNKNOWN";
 
@@ -47,14 +46,19 @@ function opportunityDto(value: Record<string, unknown>) {
 
 export async function searchScholarships(input: ScholarshipSearchInput) {
   await prepareOpportunityDatabase();
-  const filter: FilterQuery<ScholarshipDocument> = { status: "PUBLISHED" };
-  if (input.q) filter.$text = { $search: input.q };
-  if (input.country) filter.country = input.country;
-  if (input.degree) filter.degreeLevels = input.degree;
-  if (input.fundingType) filter.fundingType = input.fundingType;
-  if (input.openOnly) filter.$or = [{ deadline: { $gte: new Date() } }, { deadline: null }];
+  const filter = {
+    status: "PUBLISHED" as const,
+    ...(input.q ? { $text: { $search: input.q } } : {}),
+    ...(input.country ? { country: input.country } : {}),
+    ...(input.degree ? { degreeLevels: input.degree } : {}),
+    ...(input.fundingType ? { fundingType: input.fundingType } : {}),
+    ...(input.openOnly ? { $or: [{ deadline: { $gte: new Date() } }, { deadline: null }] } : {})
+  };
   const skip = (input.page - 1) * input.limit;
-  const [items, total] = await Promise.all([Scholarship.find(filter).sort({ deadline: 1, name: 1 }).skip(skip).limit(input.limit).populate("universityId", "name slug").lean(), Scholarship.countDocuments(filter)]);
+  const [items, total] = await Promise.all([
+    Scholarship.find(filter).sort({ deadline: 1, name: 1 }).skip(skip).limit(input.limit).populate("universityId", "name slug").lean(),
+    Scholarship.countDocuments(filter)
+  ]);
   return { items: items.map((item) => scholarshipDto(item as unknown as Record<string, unknown>)), ...pagination(total, input.page, input.limit) };
 }
 
@@ -67,14 +71,19 @@ export async function getScholarshipBySlug(slug: string) {
 
 export async function searchOpportunities(input: OpportunitySearchInput) {
   await prepareOpportunityDatabase();
-  const filter: FilterQuery<OpportunityDocument> = { status: "PUBLISHED" };
-  if (input.q) filter.$text = { $search: input.q };
-  if (input.country) filter.country = input.country;
-  if (input.researchArea) filter.researchAreas = input.researchArea;
-  if (input.type) filter.type = input.type;
-  if (input.openOnly) filter.$or = [{ deadline: { $gte: new Date() } }, { deadline: null }];
+  const filter = {
+    status: "PUBLISHED" as const,
+    ...(input.q ? { $text: { $search: input.q } } : {}),
+    ...(input.country ? { country: input.country } : {}),
+    ...(input.researchArea ? { researchAreas: input.researchArea } : {}),
+    ...(input.type ? { type: input.type } : {}),
+    ...(input.openOnly ? { $or: [{ deadline: { $gte: new Date() } }, { deadline: null }] } : {})
+  };
   const skip = (input.page - 1) * input.limit;
-  const [items, total] = await Promise.all([Opportunity.find(filter).sort({ deadline: 1, title: 1 }).skip(skip).limit(input.limit).populate("universityId", "name slug").populate("professorId", "fullName slug").lean(), Opportunity.countDocuments(filter)]);
+  const [items, total] = await Promise.all([
+    Opportunity.find(filter).sort({ deadline: 1, title: 1 }).skip(skip).limit(input.limit).populate("universityId", "name slug").populate("professorId", "fullName slug").lean(),
+    Opportunity.countDocuments(filter)
+  ]);
   return { items: items.map((item) => opportunityDto(item as unknown as Record<string, unknown>)), ...pagination(total, input.page, input.limit) };
 }
 

@@ -1,12 +1,51 @@
-import { afterAll,beforeAll,beforeEach,describe,expect,it } from "vitest";
-import { connectDatabase,disconnectDatabase } from "@/server/db/mongoose";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { connectDatabase, disconnectDatabase } from "@/server/db/mongoose";
 import { Professor } from "@/server/models/Professor";
 import { SavedItem } from "@/server/models/SavedItem";
 import { University } from "@/server/models/University";
 import { User } from "@/server/models/User";
-import { deleteSavedItem,listSavedItems,saveItem,updateSavedItem } from "@/server/saved/saved.service";
-let userA="",userB="",professorId="";
-beforeAll(async()=>{process.env.MONGODB_URI="mongodb://127.0.0.1:27017/researvia_saved_ci";process.env.APP_URL||="http://localhost:3000";process.env.SESSION_SECRET||="test-session-secret-value-at-least-32-characters";process.env.TOKEN_ENCRYPTION_KEY||="test-token-encryption-key-at-least-32-characters";await connectDatabase()});
-beforeEach(async()=>{await Promise.all([SavedItem.deleteMany({}),Professor.deleteMany({}),University.deleteMany({}),User.deleteMany({})]);const[a,b]=await User.create([{email:"a@example.com",displayName:"A",emailVerifiedAt:new Date()},{email:"b@example.com",displayName:"B",emailVerifiedAt:new Date()}]);userA=a._id.toString();userB=b._id.toString();const university=await University.create({name:"Open University",slug:"open-university",country:"Germany",status:"PUBLISHED"});const professor=await Professor.create({fullName:"Open Professor",slug:"open-professor",universityId:university._id,country:"Germany",status:"PUBLISHED"});professorId=professor._id.toString()});
-afterAll(async()=>{await disconnectDatabase()});
-describe("saved items",()=>{it("idempotently saves one target per student",async()=>{await saveItem(userA,{itemType:"PROFESSOR",targetId:professorId,collection:"Targets",notes:"Strong match",tags:["ml"]});await saveItem(userA,{itemType:"PROFESSOR",targetId:professorId,collection:"Targets",notes:"Updated note",tags:["ml"]});const result=await listSavedItems(userA,{});expect(result.items).toHaveLength(1);expect(result.items[0]?.notes).toBe("Updated note")});it("prevents another student from editing or deleting the saved record",async()=>{const item=await saveItem(userA,{itemType:"PROFESSOR",targetId:professorId,collection:"Saved",notes:"",tags:[]});await expect(updateSavedItem(userB,item.id,{notes:"hijack"})).rejects.toMatchObject({code:"SAVED_ITEM_NOT_FOUND"});await expect(deleteSavedItem(userB,item.id)).rejects.toMatchObject({code:"SAVED_ITEM_NOT_FOUND"});expect((await listSavedItems(userA,{})).items).toHaveLength(1)})});
+import { deleteSavedItem, listSavedItems, saveItem, updateSavedItem } from "@/server/saved/saved.service";
+
+let userA = "";
+let userB = "";
+let professorId = "";
+
+beforeAll(async () => {
+  process.env.MONGODB_URI = "mongodb://127.0.0.1:27017/researvia_saved_ci";
+  process.env.APP_URL ||= "http://localhost:3000";
+  process.env.SESSION_SECRET ||= "test-session-secret-value-at-least-32-characters";
+  process.env.TOKEN_ENCRYPTION_KEY ||= "test-token-encryption-key-at-least-32-characters";
+  await connectDatabase();
+});
+
+beforeEach(async () => {
+  await Promise.all([SavedItem.deleteMany({}), Professor.deleteMany({}), University.deleteMany({}), User.deleteMany({})]);
+  const a = await User.create({ email: "a@example.com", displayName: "A", emailVerifiedAt: new Date() });
+  const b = await User.create({ email: "b@example.com", displayName: "B", emailVerifiedAt: new Date() });
+  userA = a._id.toString();
+  userB = b._id.toString();
+  const university = await University.create({ name: "Open University", slug: "open-university", country: "Germany", status: "PUBLISHED" });
+  const professor = await Professor.create({ fullName: "Open Professor", slug: "open-professor", universityId: university._id, country: "Germany", status: "PUBLISHED" });
+  professorId = professor._id.toString();
+});
+
+afterAll(async () => {
+  await disconnectDatabase();
+});
+
+describe("saved items", () => {
+  it("idempotently saves one target per student", async () => {
+    await saveItem(userA, { itemType: "PROFESSOR", targetId: professorId, collection: "Targets", notes: "Strong match", tags: ["ml"] });
+    await saveItem(userA, { itemType: "PROFESSOR", targetId: professorId, collection: "Targets", notes: "Updated note", tags: ["ml"] });
+    const result = await listSavedItems(userA, {});
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0]?.notes).toBe("Updated note");
+  });
+
+  it("prevents another student from editing or deleting the saved record", async () => {
+    const item = await saveItem(userA, { itemType: "PROFESSOR", targetId: professorId, collection: "Saved", notes: "", tags: [] });
+    await expect(updateSavedItem(userB, item.id, { notes: "hijack" })).rejects.toMatchObject({ code: "SAVED_ITEM_NOT_FOUND" });
+    await expect(deleteSavedItem(userB, item.id)).rejects.toMatchObject({ code: "SAVED_ITEM_NOT_FOUND" });
+    expect((await listSavedItems(userA, {})).items).toHaveLength(1);
+  });
+});
