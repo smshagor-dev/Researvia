@@ -1,0 +1,30 @@
+import type { FilterQuery } from "mongoose";
+import { connectDatabase } from "@/server/db/mongoose";
+import { AppError } from "@/server/errors/AppError";
+import { CalendarEvent, type CalendarEventDocument } from "@/server/models/CalendarEvent";
+import { InterviewPrep } from "@/server/models/InterviewPrep";
+import { RecommendationFeedback } from "@/server/models/RecommendationFeedback";
+import { ResearchProject } from "@/server/models/ResearchProject";
+import { Watchlist } from "@/server/models/Watchlist";
+import { WritingWorkspace } from "@/server/models/WritingWorkspace";
+
+export async function listCalendar(userId:string,from?:Date,to?:Date){await connectDatabase();const filter:FilterQuery<CalendarEventDocument>={userId};if(from||to)filter.startsAt={...(from?{$gte:from}:{}),...(to?{$lte:to}:{})};return CalendarEvent.find(filter).sort({startsAt:1}).limit(500).lean();}
+export async function createCalendarEvent(userId:string,input:Record<string,unknown>){await connectDatabase();return CalendarEvent.create({userId,...input});}
+export async function deleteCalendarEvent(userId:string,id:string){await connectDatabase();const result=await CalendarEvent.deleteOne({_id:id,userId});if(!result.deletedCount)throw new AppError("EVENT_NOT_FOUND",404,"Calendar event not found.");}
+export async function calendarIcs(userId:string){const events=await listCalendar(userId);const escape=(v:string)=>v.replace(/[\\;,\n]/g,(m)=>({"\\":"\\\\",";":"\\;",",":"\\,","\n":"\\n"}[m]??m));const stamp=(d:Date)=>new Date(d).toISOString().replace(/[-:]/g,"").replace(/\.\d{3}Z$/,"Z");const rows=["BEGIN:VCALENDAR","VERSION:2.0","PRODID:-//ResearVia//Academic Calendar//EN"];for(const e of events){rows.push("BEGIN:VEVENT",`UID:${e._id.toString()}@researvia`,`DTSTAMP:${stamp(new Date())}`,`DTSTART:${stamp(e.startsAt)}`,...(e.endsAt?[`DTEND:${stamp(e.endsAt)}`]:[]),`SUMMARY:${escape(e.title)}`,`DESCRIPTION:${escape(e.notes||"")}`,"END:VEVENT");}rows.push("END:VCALENDAR");return rows.join("\r\n");}
+export async function listWatchlists(userId:string){await connectDatabase();return Watchlist.find({userId}).sort({updatedAt:-1}).lean();}
+export async function createWatchlist(userId:string,input:Record<string,unknown>){await connectDatabase();return Watchlist.create({userId,...input});}
+export async function updateWatchlist(userId:string,id:string,input:Record<string,unknown>){await connectDatabase();const item=await Watchlist.findOneAndUpdate({_id:id,userId},{$set:input},{new:true,runValidators:true}).lean();if(!item)throw new AppError("WATCHLIST_NOT_FOUND",404,"Watchlist not found.");return item;}
+export async function deleteWatchlist(userId:string,id:string){await connectDatabase();const r=await Watchlist.deleteOne({_id:id,userId});if(!r.deletedCount)throw new AppError("WATCHLIST_NOT_FOUND",404,"Watchlist not found.");}
+export async function saveRecommendationFeedback(userId:string,input:{targetType:string;targetId:string;feedback:string;reason?:string}){await connectDatabase();return RecommendationFeedback.findOneAndUpdate({userId,targetType:input.targetType,targetId:input.targetId},{$set:{...input,userId}},{upsert:true,new:true,runValidators:true}).lean();}
+export async function listProjects(userId:string){await connectDatabase();return ResearchProject.find({userId}).sort({updatedAt:-1}).lean();}
+export async function createProject(userId:string,input:Record<string,unknown>){await connectDatabase();return ResearchProject.create({userId,...input});}
+export async function updateProject(userId:string,id:string,input:Record<string,unknown>){await connectDatabase();const item=await ResearchProject.findOneAndUpdate({_id:id,userId},{$set:input},{new:true,runValidators:true}).lean();if(!item)throw new AppError("PROJECT_NOT_FOUND",404,"Research project not found.");return item;}
+export async function deleteProject(userId:string,id:string){await connectDatabase();const r=await ResearchProject.deleteOne({_id:id,userId});if(!r.deletedCount)throw new AppError("PROJECT_NOT_FOUND",404,"Research project not found.");}
+export async function listWriting(userId:string){await connectDatabase();return WritingWorkspace.find({userId}).sort({updatedAt:-1}).lean();}
+export async function createWriting(userId:string,input:Record<string,unknown>){await connectDatabase();return WritingWorkspace.create({userId,...input});}
+export async function updateWriting(userId:string,id:string,input:Record<string,unknown>){await connectDatabase();const item=await WritingWorkspace.findOneAndUpdate({_id:id,userId},{$set:input},{new:true,runValidators:true}).lean();if(!item)throw new AppError("WORKSPACE_NOT_FOUND",404,"Writing workspace not found.");return item;}
+export async function addWritingVersion(userId:string,id:string,input:{content:string;createdBy?:string;sourceNotes?:string[]}){await connectDatabase();const item=await WritingWorkspace.findOneAndUpdate({_id:id,userId},{$push:{versions:{content:input.content,createdBy:input.createdBy??"STUDENT",sourceNotes:input.sourceNotes??[],createdAt:new Date()}}},{new:true,runValidators:true}).lean();if(!item)throw new AppError("WORKSPACE_NOT_FOUND",404,"Writing workspace not found.");return item;}
+export async function listInterviewPrep(userId:string){await connectDatabase();return InterviewPrep.find({userId}).sort({updatedAt:-1}).lean();}
+export async function createInterviewPrep(userId:string,input:Record<string,unknown>){await connectDatabase();return InterviewPrep.create({userId,...input});}
+export async function updateInterviewPrep(userId:string,id:string,input:Record<string,unknown>){await connectDatabase();const item=await InterviewPrep.findOneAndUpdate({_id:id,userId},{$set:input},{new:true,runValidators:true}).lean();if(!item)throw new AppError("INTERVIEW_PREP_NOT_FOUND",404,"Interview preparation workspace not found.");return item;}
