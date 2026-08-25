@@ -8,6 +8,7 @@ const items = [
   { href: "/dashboard/profile", label: "Academic profile", icon: "profile" },
   { href: "/dashboard/research", label: "Research explorer", icon: "research" },
   { href: "/dashboard/reading", label: "Reading list", icon: "research" },
+  { href: "/dashboard/workspace", label: "Research workspace", icon: "research" },
   { href: "/dashboard/universities", label: "Universities", icon: "university" },
   { href: "/dashboard/professors", label: "Professors", icon: "professor" },
   { href: "/dashboard/scholarships", label: "Scholarships", icon: "award" },
@@ -21,7 +22,8 @@ const items = [
   { href: "/dashboard/email-accounts", label: "Email accounts", icon: "email" },
   { href: "/dashboard/documents", label: "Documents", icon: "documents" },
   { href: "/dashboard/notifications", label: "Notifications", icon: "notifications" },
-  { href: "/dashboard/security", label: "Security", icon: "security" }
+  { href: "/dashboard/security", label: "Security", icon: "security" },
+  { href: "/dashboard/privacy", label: "Privacy Center", icon: "security" }
 ] as const;
 
 function NavIcon({ name }: { name: (typeof items)[number]["icon"] }) {
