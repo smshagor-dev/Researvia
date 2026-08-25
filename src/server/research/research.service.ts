@@ -9,14 +9,16 @@ const limitValue = (value?: number) => Math.max(1, Math.min(value ?? 20, 50));
 const safeRegex = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 export async function searchPapers(query: string, limit?: number) {
-  await connectDatabase(); const q = query.trim();
-  const filter = q ? { status: "PUBLISHED", $text: { $search: q } } : { status: "PUBLISHED" };
-  return Paper.find(filter).sort(q ? { score: { $meta: "textScore" }, publicationDate: -1 } : { publicationDate: -1 }).limit(limitValue(limit)).lean();
+  await connectDatabase();
+  const q = query.trim();
+  if (q) return Paper.find({ status: "PUBLISHED", $text: { $search: q } }).sort({ score: { $meta: "textScore" }, publicationDate: -1 }).limit(limitValue(limit)).lean();
+  return Paper.find({ status: "PUBLISHED" }).sort({ publicationDate: -1 }).limit(limitValue(limit)).lean();
 }
 export async function searchLabs(query: string, limit?: number) {
-  await connectDatabase(); const q = query.trim();
-  const filter = q ? { status: "PUBLISHED", $text: { $search: q } } : { status: "PUBLISHED" };
-  return ResearchLab.find(filter).sort({ lastVerifiedAt: -1 }).limit(limitValue(limit)).lean();
+  await connectDatabase();
+  const q = query.trim();
+  if (q) return ResearchLab.find({ status: "PUBLISHED", $text: { $search: q } }).sort({ lastVerifiedAt: -1 }).limit(limitValue(limit)).lean();
+  return ResearchLab.find({ status: "PUBLISHED" }).sort({ lastVerifiedAt: -1 }).limit(limitValue(limit)).lean();
 }
 export async function topicExplorer(query: string) {
   await connectDatabase(); const q = query.trim(); if (!q) return { topic: "", relatedTopics: [], papers: [], labs: [] };
@@ -33,10 +35,10 @@ export async function savePaper(userId: string, paperId: string) {
   await connectDatabase(); const paper = await Paper.findOne({ _id: paperId, status: "PUBLISHED" }).lean(); if (!paper) throw new AppError("PAPER_NOT_FOUND",404,"Published paper not found.");
   return ReadingItem.findOneAndUpdate({ userId, paperId }, { $setOnInsert: { userId, paperId, status: "TO_READ", notes: "", tags: [], quotes: [], mappedResearchInterests: [] } }, { upsert: true, new: true }).lean();
 }
-export async function updateReading(userId: string, id: string, input: { status?: string; notes?: string; tags?: string[]; quotes?: string[]; mappedResearchInterests?: string[] }) {
-  await connectDatabase(); const allowed = new Set(["TO_READ","READING","READ","ARCHIVED"]); if (input.status && !allowed.has(input.status)) throw new AppError("INVALID_STATUS",400,"Invalid reading status.");
+export async function updateReading(userId: string, id: string, input: { status?: "TO_READ"|"READING"|"READ"|"ARCHIVED"; notes?: string; tags?: string[]; quotes?: string[]; mappedResearchInterests?: string[] }) {
+  await connectDatabase();
   const item = await ReadingItem.findOneAndUpdate({ _id: id, userId }, { $set: input }, { new: true, runValidators: true }).lean(); if (!item) throw new AppError("READING_ITEM_NOT_FOUND",404,"Reading item not found."); return item;
 }
 export async function deleteReading(userId: string, id: string) { await connectDatabase(); const result=await ReadingItem.deleteOne({ _id:id,userId }); if(!result.deletedCount)throw new AppError("READING_ITEM_NOT_FOUND",404,"Reading item not found."); }
 export async function listStudentPublications(userId: string){await connectDatabase();return StudentPublication.find({userId}).sort({publicationDate:-1}).lean();}
-export async function addStudentPublication(userId:string,input:{title:string;doi?:string;authors?:string[];venue?:string;publicationDate?:Date|null;url?:string}){await connectDatabase();return StudentPublication.create({userId,...input,source:"MANUAL",verified:false});}
+export async function addStudentPublication(userId:string,input:{title:string;doi?:string;authors?:string[];venue?:string;publicationDate?:Date|null;url?:string}){await connectDatabase();if(input.doi){const existing=await StudentPublication.findOne({userId,doi:input.doi.trim().toLowerCase()}).lean();if(existing)return existing;}return StudentPublication.create({userId,...input,source:"MANUAL",verified:false});}
