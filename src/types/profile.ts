@@ -1,0 +1,32 @@
+export type CurrentDegree = "HIGH_SCHOOL" | "BACHELORS" | "MASTERS" | "PHD" | "OTHER";
+export type TargetDegree = "BACHELORS" | "MASTERS" | "PHD" | "RESEARCH" | "OTHER";
+export type FundingPreference = "ANY" | "FULLY_FUNDED" | "FULL_OR_PARTIAL" | "SELF_FUNDED";
+export type ProfileVisibility = "PRIVATE" | "RECOMMENDATION_ONLY";
+
+export type StudentProfileDto = {
+  id: string;
+  userId: string;
+  country: string;
+  currentUniversity: string;
+  currentDegree: CurrentDegree | null;
+  fieldOfStudy: string;
+  graduationYear: number | null;
+  gpa: string;
+  bio: string;
+  researchInterests: string[];
+  skills: string[];
+  languages: string[];
+  targetDegrees: TargetDegree[];
+  targetCountries: string[];
+  fundingPreference: FundingPreference;
+  preferredResearchAreas: string[];
+  website: string;
+  linkedin: string;
+  github: string;
+  googleScholar: string;
+  orcid: string;
+  profileVisibility: ProfileVisibility;
+  onboardingStep: number;
+  onboardingCompletedAt: string | null;
+  completion: number;
+};

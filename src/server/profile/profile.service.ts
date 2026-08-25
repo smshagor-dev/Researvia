@@ -2,34 +2,7 @@ import { type ProfilePatchInput } from "@/schemas/profile";
 import { prepareProfileDatabase } from "@/server/db/profile-indexes";
 import { AppError } from "@/server/errors/AppError";
 import { StudentProfile } from "@/server/models/StudentProfile";
-
-export type StudentProfileDto = {
-  id: string;
-  userId: string;
-  country: string;
-  currentUniversity: string;
-  currentDegree: string | null;
-  fieldOfStudy: string;
-  graduationYear: number | null;
-  gpa: string;
-  bio: string;
-  researchInterests: string[];
-  skills: string[];
-  languages: string[];
-  targetDegrees: string[];
-  targetCountries: string[];
-  fundingPreference: string;
-  preferredResearchAreas: string[];
-  website: string;
-  linkedin: string;
-  github: string;
-  googleScholar: string;
-  orcid: string;
-  profileVisibility: string;
-  onboardingStep: number;
-  onboardingCompletedAt: string | null;
-  completion: number;
-};
+import type { StudentProfileDto } from "@/types/profile";
 
 function hasText(value: unknown): boolean {
   return typeof value === "string" && value.trim().length > 0;
@@ -62,7 +35,7 @@ function serializeProfile(profile: Record<string, unknown>): StudentProfileDto {
     userId: String(profile.userId),
     country: String(profile.country ?? ""),
     currentUniversity: String(profile.currentUniversity ?? ""),
-    currentDegree: profile.currentDegree ? String(profile.currentDegree) : null,
+    currentDegree: profile.currentDegree ? (String(profile.currentDegree) as StudentProfileDto["currentDegree"]) : null,
     fieldOfStudy: String(profile.fieldOfStudy ?? ""),
     graduationYear: typeof profile.graduationYear === "number" ? profile.graduationYear : null,
     gpa: String(profile.gpa ?? ""),
@@ -70,16 +43,18 @@ function serializeProfile(profile: Record<string, unknown>): StudentProfileDto {
     researchInterests: Array.isArray(profile.researchInterests) ? profile.researchInterests.map(String) : [],
     skills: Array.isArray(profile.skills) ? profile.skills.map(String) : [],
     languages: Array.isArray(profile.languages) ? profile.languages.map(String) : [],
-    targetDegrees: Array.isArray(profile.targetDegrees) ? profile.targetDegrees.map(String) : [],
+    targetDegrees: Array.isArray(profile.targetDegrees)
+      ? (profile.targetDegrees.map(String) as StudentProfileDto["targetDegrees"])
+      : [],
     targetCountries: Array.isArray(profile.targetCountries) ? profile.targetCountries.map(String) : [],
-    fundingPreference: String(profile.fundingPreference ?? "ANY"),
+    fundingPreference: String(profile.fundingPreference ?? "ANY") as StudentProfileDto["fundingPreference"],
     preferredResearchAreas: Array.isArray(profile.preferredResearchAreas) ? profile.preferredResearchAreas.map(String) : [],
     website: String(profile.website ?? ""),
     linkedin: String(profile.linkedin ?? ""),
     github: String(profile.github ?? ""),
     googleScholar: String(profile.googleScholar ?? ""),
     orcid: String(profile.orcid ?? ""),
-    profileVisibility: String(profile.profileVisibility ?? "RECOMMENDATION_ONLY"),
+    profileVisibility: String(profile.profileVisibility ?? "RECOMMENDATION_ONLY") as StudentProfileDto["profileVisibility"],
     onboardingStep: typeof profile.onboardingStep === "number" ? profile.onboardingStep : 1,
     onboardingCompletedAt: profile.onboardingCompletedAt
       ? new Date(profile.onboardingCompletedAt as string | number | Date).toISOString()
