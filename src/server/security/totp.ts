@@ -32,8 +32,17 @@ function codeForCounter(secret: string, counter: number): string {
   const buffer = Buffer.alloc(8);
   buffer.writeBigUInt64BE(BigInt(counter));
   const digest = createHmac("sha1", decodeBase32(secret)).update(buffer).digest();
-  const offset = digest[digest.length - 1] & 0x0f;
-  const binary = ((digest[offset] & 0x7f) << 24) | ((digest[offset + 1] & 0xff) << 16) | ((digest[offset + 2] & 0xff) << 8) | (digest[offset + 3] & 0xff);
+  const lastByte = digest.at(-1);
+  if (lastByte === undefined) throw new Error("Unable to generate TOTP code.");
+  const offset = lastByte & 0x0f;
+  const first = digest[offset];
+  const second = digest[offset + 1];
+  const third = digest[offset + 2];
+  const fourth = digest[offset + 3];
+  if (first === undefined || second === undefined || third === undefined || fourth === undefined) {
+    throw new Error("Unable to generate TOTP code.");
+  }
+  const binary = ((first & 0x7f) << 24) | ((second & 0xff) << 16) | ((third & 0xff) << 8) | (fourth & 0xff);
   return String(binary % 1_000_000).padStart(6, "0");
 }
 
