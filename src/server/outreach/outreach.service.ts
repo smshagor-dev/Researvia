@@ -166,10 +166,11 @@ export async function reconcileOutreachReplies(userId: string) {
   const outbound = await OutreachRecipient.find({ userId, status: "SENT", sentAt: { $ne: null } }).lean();
   let replies = 0;
   for (const recipient of outbound) {
-    const query = recipient.providerThreadId
-      ? { userId, direction: "INBOUND", providerThreadId: recipient.providerThreadId, createdAt: { $gte: recipient.sentAt } }
-      : { userId, direction: "INBOUND", from: { $regex: recipient.email.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), $options: "i" }, createdAt: { $gte: recipient.sentAt } };
-    const message = await EmailMessage.findOne(query).lean();
+    const since = recipient.sentAt ? new Date(recipient.sentAt) : new Date(0);
+    const escapedEmail = recipient.email.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const message = recipient.providerThreadId
+      ? await EmailMessage.findOne({ userId, direction: "INBOUND", providerThreadId: recipient.providerThreadId, createdAt: { $gte: since } }).lean()
+      : await EmailMessage.findOne({ userId, direction: "INBOUND", from: { $regex: escapedEmail, $options: "i" }, createdAt: { $gte: since } }).lean();
     if (message) {
       await OutreachRecipient.updateOne({ _id: recipient._id, userId }, { $set: { status: "REPLIED" } });
       replies += 1;
