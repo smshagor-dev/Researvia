@@ -17,6 +17,7 @@ export function DashboardShell({
   children: ReactNode;
 }) {
   const initial = user.displayName.trim().charAt(0).toUpperCase() || "S";
+  const isAdmin = user.role === "ADMIN" || user.role === "SUPER_ADMIN";
 
   return (
     <div className="min-h-svh bg-slate-50 text-slate-950">
@@ -41,6 +42,7 @@ export function DashboardShell({
                 <p className="truncate text-xs text-slate-500">{user.email}</p>
               </div>
             </div>
+            {isAdmin ? <Link href="/admin" className="mb-3 block rounded-lg border border-slate-200 bg-white px-3 py-2 text-center text-sm font-medium text-slate-700 hover:bg-slate-50">Open admin console</Link> : null}
             <LogoutButton />
           </div>
         </aside>
@@ -49,7 +51,7 @@ export function DashboardShell({
           <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/95 backdrop-blur lg:hidden">
             <div className="flex items-center justify-between px-4 py-3 sm:px-6">
               <Brand />
-              <div className="grid size-9 place-items-center rounded-full bg-slate-950 text-sm font-semibold text-white">{initial}</div>
+              <div className="flex items-center gap-2">{isAdmin ? <Link href="/admin" className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-medium text-slate-700">Admin</Link> : null}<div className="grid size-9 place-items-center rounded-full bg-slate-950 text-sm font-semibold text-white">{initial}</div></div>
             </div>
             <div className="overflow-x-auto px-4 pb-3 sm:px-6">
               <DashboardNav className="flex min-w-max gap-1 space-y-0" />
