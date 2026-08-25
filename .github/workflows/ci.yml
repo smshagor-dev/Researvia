@@ -13,34 +13,52 @@ jobs:
   quality:
     runs-on: ubuntu-latest
     timeout-minutes: 25
-    services:
-      mongodb:
-        image: mongo:8.0
-        ports:
-          - 27017:27017
-        options: >-
-          --health-cmd "mongosh --quiet --eval 'db.adminCommand({ ping: 1 })'"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 24
+
+      - name: Start MongoDB replica set
+        run: |
+          docker run -d --name researvia-mongodb \
+            -p 27017:27017 \
+            mongo:8.0 \
+            mongod --replSet rs0 --bind_ip_all
+
+          for attempt in {1..30}; do
+            if docker exec researvia-mongodb mongosh --quiet --eval 'db.adminCommand({ ping: 1 }).ok' | grep -q 1; then
+              break
+            fi
+            sleep 1
+          done
+
+          docker exec researvia-mongodb mongosh --quiet --eval \
+            'rs.initiate({_id:"rs0",members:[{_id:0,host:"127.0.0.1:27017"}]})'
+
+          for attempt in {1..30}; do
+            if docker exec researvia-mongodb mongosh --quiet --eval 'db.hello().isWritablePrimary' | grep -q true; then
+              exit 0
+            fi
+            sleep 1
+          done
+
+          docker logs researvia-mongodb
+          exit 1
+
       - run: npm install
       - run: npm run lint
       - run: npm run typecheck
       - name: Test
         env:
-          MONGODB_URI: mongodb://127.0.0.1:27017/researvia_ci
+          MONGODB_URI: mongodb://127.0.0.1:27017/researvia_ci?replicaSet=rs0
           SESSION_SECRET: ci-session-secret-value-at-least-32-characters
           TOKEN_ENCRYPTION_KEY: ci-token-encryption-value-at-least-32-chars
           APP_URL: http://localhost:3000
         run: npm test
       - name: Production build
         env:
-          MONGODB_URI: mongodb://127.0.0.1:27017/researvia_ci
+          MONGODB_URI: mongodb://127.0.0.1:27017/researvia_ci?replicaSet=rs0
           SESSION_SECRET: ci-session-secret-value-at-least-32-characters
           TOKEN_ENCRYPTION_KEY: ci-token-encryption-value-at-least-32-chars
           APP_URL: http://localhost:3000
