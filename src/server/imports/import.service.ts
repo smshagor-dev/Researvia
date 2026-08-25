@@ -12,6 +12,11 @@ import { writeAudit } from "@/server/admin/admin.service";
 export type ImportEntityType = "UNIVERSITY" | "PROFESSOR" | "SCHOLARSHIP" | "OPPORTUNITY";
 export type ImportFormat = "CSV" | "JSON" | "OPENALEX";
 
+const OPPORTUNITY_TYPES = ["PHD", "MASTERS", "RESEARCH_ASSISTANT", "TEACHING_ASSISTANT", "RESEARCH_INTERNSHIP", "INDUSTRY_RESEARCH_INTERNSHIP", "FELLOWSHIP", "CONFERENCE", "WORKSHOP", "SUMMER_PROGRAM", "RESEARCH_PROJECT", "OTHER"] as const;
+type OpportunityType = (typeof OPPORTUNITY_TYPES)[number];
+const FUNDING_TYPES = ["FULL", "PARTIAL", "OTHER", "UNKNOWN"] as const;
+type FundingType = (typeof FUNDING_TYPES)[number];
+
 const text = (value: unknown) => typeof value === "string" ? value.trim() : value == null ? "" : String(value).trim();
 const list = (value: unknown) => Array.isArray(value) ? value.map(text).filter(Boolean) : text(value).split(/[;|]/).map((item) => item.trim()).filter(Boolean);
 const slugify = (value: string) => value.toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 300);
@@ -19,6 +24,16 @@ const slugify = (value: string) => value.toLowerCase().normalize("NFKD").replace
 function plain(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Row must be an object.");
   return value as Record<string, unknown>;
+}
+
+function fundingType(value: unknown): FundingType {
+  const normalized = text(value).toUpperCase();
+  return (FUNDING_TYPES as readonly string[]).includes(normalized) ? normalized as FundingType : "UNKNOWN";
+}
+
+function opportunityType(value: unknown): OpportunityType | null {
+  const normalized = text(value).toUpperCase();
+  return (OPPORTUNITY_TYPES as readonly string[]).includes(normalized) ? normalized as OpportunityType : null;
 }
 
 function normalize(entityType: ImportEntityType, rawInput: unknown) {
@@ -53,24 +68,23 @@ function normalize(entityType: ImportEntityType, rawInput: unknown) {
     if (!sourceUrl) errors.push("sourceUrl is required");
     const deadline = text(raw.deadline);
     if (deadline && Number.isNaN(Date.parse(deadline))) errors.push("deadline must be a valid date");
-    return { errors, data: { name, slug: text(raw.slug) || slugify(`${name}-${country}`), provider, country, degreeLevels: list(raw.degreeLevels), studyFields: list(raw.studyFields), fundingType: ["FULL", "PARTIAL", "OTHER", "UNKNOWN"].includes(text(raw.fundingType).toUpperCase()) ? text(raw.fundingType).toUpperCase() : "UNKNOWN", fundingAmount: text(raw.fundingAmount), tuitionCoverage: text(raw.tuitionCoverage), stipend: text(raw.stipend), travelSupport: text(raw.travelSupport), eligibility: text(raw.eligibility), nationalityRestrictions: list(raw.nationalityRestrictions), languageRequirements: list(raw.languageRequirements), requiredDocuments: list(raw.requiredDocuments), applicationUrl, sourceUrl, deadline: deadline || null } };
+    return { errors, data: { name, slug: text(raw.slug) || slugify(`${name}-${country}`), provider, country, degreeLevels: list(raw.degreeLevels), studyFields: list(raw.studyFields), fundingType: fundingType(raw.fundingType), fundingAmount: text(raw.fundingAmount), tuitionCoverage: text(raw.tuitionCoverage), stipend: text(raw.stipend), travelSupport: text(raw.travelSupport), eligibility: text(raw.eligibility), nationalityRestrictions: list(raw.nationalityRestrictions), languageRequirements: list(raw.languageRequirements), requiredDocuments: list(raw.requiredDocuments), applicationUrl, sourceUrl, deadline: deadline || null } };
   }
   const title = text(raw.title);
   const organization = text(raw.organization);
   const country = text(raw.country);
   const applicationUrl = text(raw.applicationUrl);
   const sourceUrl = text(raw.sourceUrl);
-  const type = text(raw.type).toUpperCase();
-  const allowed = ["PHD", "MASTERS", "RESEARCH_ASSISTANT", "TEACHING_ASSISTANT", "RESEARCH_INTERNSHIP", "INDUSTRY_RESEARCH_INTERNSHIP", "FELLOWSHIP", "CONFERENCE", "WORKSHOP", "SUMMER_PROGRAM", "RESEARCH_PROJECT", "OTHER"];
+  const type = opportunityType(raw.type);
   if (!title) errors.push("title is required");
   if (!organization) errors.push("organization is required");
   if (!country) errors.push("country is required");
   if (!applicationUrl) errors.push("applicationUrl is required");
   if (!sourceUrl) errors.push("sourceUrl is required");
-  if (!allowed.includes(type)) errors.push("type is invalid");
+  if (!type) errors.push("type is invalid");
   const deadline = text(raw.deadline);
   if (deadline && Number.isNaN(Date.parse(deadline))) errors.push("deadline must be a valid date");
-  return { errors, data: { title, slug: text(raw.slug) || slugify(`${title}-${organization}`), type, organization, country, city: text(raw.city), fields: list(raw.fields), researchAreas: list(raw.researchAreas), funding: text(raw.funding), eligibility: text(raw.eligibility), description: text(raw.description), requiredDocuments: list(raw.requiredDocuments), applicationUrl, sourceUrl, deadline: deadline || null } };
+  return { errors, data: { title, slug: text(raw.slug) || slugify(`${title}-${organization}`), type: type ?? "OTHER", organization, country, city: text(raw.city), fields: list(raw.fields), researchAreas: list(raw.researchAreas), funding: text(raw.funding), eligibility: text(raw.eligibility), description: text(raw.description), requiredDocuments: list(raw.requiredDocuments), applicationUrl, sourceUrl, deadline: deadline || null } };
 }
 
 export function parseCsv(input: string): Record<string, string>[] {
@@ -93,7 +107,9 @@ export function parseCsv(input: string): Record<string, string>[] {
   }
   if (field || row.length) { row.push(field); if (row.some((value) => value.trim())) rows.push(row); }
   if (rows.length < 2) return [];
-  const headers = rows[0].map((value) => value.trim());
+  const headerRow = rows[0];
+  if (!headerRow) return [];
+  const headers = headerRow.map((value) => value.trim());
   return rows.slice(1).map((values) => Object.fromEntries(headers.map((header, index) => [header, values[index] ?? ""])));
 }
 
@@ -130,20 +146,55 @@ export async function confirmImport(adminUserId: string, importJobId: string) {
   return { queued: true };
 }
 
-async function importOne(entityType: ImportEntityType, format: ImportFormat, data: Record<string, unknown>) {
-  const source = format === "OPENALEX" ? "OPENALEX" : format;
+async function importOne(entityType: ImportEntityType, format: ImportFormat, dataInput: unknown): Promise<string> {
+  const data = plain(dataInput);
   if (entityType === "UNIVERSITY") {
-    return University.findOneAndUpdate({ slug: data.slug }, { $set: { name: data.name, slug: data.slug, aliases: data.aliases, country: data.country, city: data.city, region: data.region, website: data.website, description: data.description, logoUrl: data.logoUrl, externalIds: { openAlex: data.openAlexId || "", ror: data.rorId || "" }, source, sourceUrl: data.sourceUrl || "", retrievedAt: new Date(), status: "DRAFT" } }, { upsert: true, new: true, runValidators: true });
+    const slug = text(data.slug);
+    const source: "OPENALEX" | "CSV" | "JSON" = format === "OPENALEX" ? "OPENALEX" : format;
+    const target = await University.findOneAndUpdate(
+      { slug },
+      { $set: { name: text(data.name), slug, aliases: list(data.aliases), country: text(data.country), city: text(data.city), region: text(data.region), website: text(data.website), description: text(data.description), logoUrl: text(data.logoUrl), externalIds: { openAlex: text(data.openAlexId), ror: text(data.rorId) }, source, sourceUrl: text(data.sourceUrl), retrievedAt: new Date(), status: "DRAFT" } },
+      { upsert: true, new: true, runValidators: true }
+    );
+    if (!target) throw new Error("University import did not return a record.");
+    return target._id.toString();
   }
   if (entityType === "PROFESSOR") {
-    const university = await University.findOne({ slug: data.universitySlug }).lean();
-    if (!university) throw new Error(`University ${String(data.universitySlug)} does not exist.`);
-    return Professor.findOneAndUpdate({ slug: data.slug }, { $set: { fullName: data.fullName, slug: data.slug, universityId: university._id, title: data.title, department: data.department, country: data.country, city: data.city, email: data.email, website: data.website, orcid: data.orcid, googleScholar: data.googleScholar, openAlexId: data.openAlexId, researchAreas: data.researchAreas, keywords: data.keywords, bio: data.bio, source, sourceUrl: data.sourceUrl || "", retrievedAt: new Date(), status: "DRAFT" } }, { upsert: true, new: true, runValidators: true });
+    const universitySlug = text(data.universitySlug);
+    const university = await University.findOne({ slug: universitySlug }).select("_id").lean();
+    if (!university) throw new Error(`University ${universitySlug} does not exist.`);
+    const slug = text(data.slug);
+    const source: "OPENALEX" | "CSV" | "JSON" = format === "OPENALEX" ? "OPENALEX" : format;
+    const target = await Professor.findOneAndUpdate(
+      { slug },
+      { $set: { fullName: text(data.fullName), slug, universityId: university._id, title: text(data.title), department: text(data.department), country: text(data.country), city: text(data.city), email: text(data.email).toLowerCase(), website: text(data.website), orcid: text(data.orcid), googleScholar: text(data.googleScholar), openAlexId: text(data.openAlexId), researchAreas: list(data.researchAreas), keywords: list(data.keywords), bio: text(data.bio), source, sourceUrl: text(data.sourceUrl), retrievedAt: new Date(), status: "DRAFT" } },
+      { upsert: true, new: true, runValidators: true }
+    );
+    if (!target) throw new Error("Professor import did not return a record.");
+    return target._id.toString();
   }
   if (entityType === "SCHOLARSHIP") {
-    return Scholarship.findOneAndUpdate({ slug: data.slug }, { $set: { ...data, deadline: data.deadline ? new Date(String(data.deadline)) : null, source: format === "CSV" ? "CSV" : "JSON", retrievedAt: new Date(), status: "DRAFT" } }, { upsert: true, new: true, runValidators: true });
+    const slug = text(data.slug);
+    const source: "CSV" | "JSON" = format === "CSV" ? "CSV" : "JSON";
+    const deadlineText = text(data.deadline);
+    const target = await Scholarship.findOneAndUpdate(
+      { slug },
+      { $set: { name: text(data.name), slug, provider: text(data.provider), country: text(data.country), degreeLevels: list(data.degreeLevels), studyFields: list(data.studyFields), fundingType: fundingType(data.fundingType), fundingAmount: text(data.fundingAmount), tuitionCoverage: text(data.tuitionCoverage), stipend: text(data.stipend), travelSupport: text(data.travelSupport), eligibility: text(data.eligibility), nationalityRestrictions: list(data.nationalityRestrictions), languageRequirements: list(data.languageRequirements), requiredDocuments: list(data.requiredDocuments), applicationUrl: text(data.applicationUrl), sourceUrl: text(data.sourceUrl), deadline: deadlineText ? new Date(deadlineText) : null, source, retrievedAt: new Date(), status: "DRAFT" } },
+      { upsert: true, new: true, runValidators: true }
+    );
+    if (!target) throw new Error("Scholarship import did not return a record.");
+    return target._id.toString();
   }
-  return Opportunity.findOneAndUpdate({ slug: data.slug }, { $set: { ...data, deadline: data.deadline ? new Date(String(data.deadline)) : null, source: format === "CSV" ? "CSV" : format === "JSON" ? "JSON" : "ORGANIZATION", retrievedAt: new Date(), status: "DRAFT" } }, { upsert: true, new: true, runValidators: true });
+  const slug = text(data.slug);
+  const source: "CSV" | "JSON" | "ORGANIZATION" = format === "CSV" ? "CSV" : format === "JSON" ? "JSON" : "ORGANIZATION";
+  const deadlineText = text(data.deadline);
+  const target = await Opportunity.findOneAndUpdate(
+    { slug },
+    { $set: { title: text(data.title), slug, type: opportunityType(data.type) ?? "OTHER", organization: text(data.organization), country: text(data.country), city: text(data.city), fields: list(data.fields), researchAreas: list(data.researchAreas), funding: text(data.funding), eligibility: text(data.eligibility), description: text(data.description), requiredDocuments: list(data.requiredDocuments), applicationUrl: text(data.applicationUrl), sourceUrl: text(data.sourceUrl), deadline: deadlineText ? new Date(deadlineText) : null, source, retrievedAt: new Date(), status: "DRAFT" } },
+    { upsert: true, new: true, runValidators: true }
+  );
+  if (!target) throw new Error("Opportunity import did not return a record.");
+  return target._id.toString();
 }
 
 export async function processImportJob(importJobId: string) {
@@ -152,21 +203,18 @@ export async function processImportJob(importJobId: string) {
   if (!job) return;
   job.status = "PROCESSING";
   await job.save();
-  const records = await ImportRecord.find({ importJobId: job._id, status: "VALID" }).sort({ rowNumber: 1 });
+  const records = await ImportRecord.find({ importJobId: job._id, status: "VALID" }).sort({ rowNumber: 1 }).lean();
   let processed = 0;
   let failed = 0;
   for (const record of records) {
     try {
-      const target = await importOne(job.entityType as ImportEntityType, job.format as ImportFormat, record.normalizedData as Record<string, unknown>);
-      record.status = "IMPORTED";
-      record.targetId = target._id.toString();
+      const targetId = await importOne(job.entityType as ImportEntityType, job.format as ImportFormat, record.normalizedData);
+      await ImportRecord.updateOne({ _id: record._id }, { $set: { status: "IMPORTED", targetId, errors: [] } });
       processed += 1;
     } catch (error) {
-      record.status = "FAILED";
-      record.errors = [error instanceof Error ? error.message.slice(0, 500) : "Import failed"];
+      await ImportRecord.updateOne({ _id: record._id }, { $set: { status: "FAILED", errors: [error instanceof Error ? error.message.slice(0, 500) : "Import failed"] } });
       failed += 1;
     }
-    await record.save();
   }
   job.status = "COMPLETED";
   job.processedRows = processed;
