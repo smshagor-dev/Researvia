@@ -14,6 +14,7 @@ export function LoginForm() {
   const [email, setEmail] = useState("");
   const [needsVerification, setNeedsVerification] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [challengeToken, setChallengeToken] = useState<string | null>(null);
   const router = useRouter();
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -24,16 +25,26 @@ export function LoginForm() {
     const form = new FormData(event.currentTarget);
 
     try {
-      const response = await fetch("/api/v1/auth/login", {
+      const endpoint = challengeToken ? "/api/v1/auth/2fa/verify-login" : "/api/v1/auth/login";
+      const body = challengeToken
+        ? { challengeToken, code: form.get("code") }
+        : { email: form.get("email"), password: form.get("password"), rememberMe: form.get("rememberMe") === "on" };
+      const response = await fetch(endpoint, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ email: form.get("email"), password: form.get("password"), rememberMe: form.get("rememberMe") === "on" })
+        body: JSON.stringify(body)
       });
 
       if (!response.ok) {
         const apiError = await readClientApiError(response);
         setError(apiError.message);
         setNeedsVerification(apiError.code === "EMAIL_NOT_VERIFIED");
+        return;
+      }
+
+      const payload = (await response.json()) as { data?: { requiresTwoFactor?: boolean; challengeToken?: string } };
+      if (!challengeToken && payload.data?.requiresTwoFactor && payload.data.challengeToken) {
+        setChallengeToken(payload.data.challengeToken);
         return;
       }
 
@@ -44,6 +55,21 @@ export function LoginForm() {
     } finally {
       setSubmitting(false);
     }
+  }
+
+  if (challengeToken) {
+    return (
+      <form className="space-y-5" onSubmit={submit}>
+        {error ? <Alert>{error}</Alert> : null}
+        <Alert tone="info">Enter the 6-digit code from your authenticator app, or one unused recovery code.</Alert>
+        <div className="space-y-2">
+          <Label htmlFor="code">Authenticator or recovery code</Label>
+          <Input id="code" name="code" autoComplete="one-time-code" required maxLength={32} autoFocus placeholder="123456" />
+        </div>
+        <Button type="submit" className="w-full" disabled={submitting}>{submitting ? "Verifying…" : "Verify and sign in"}</Button>
+        <button type="button" className="w-full text-sm font-medium text-slate-600 hover:text-slate-950" onClick={() => { setChallengeToken(null); setError(null); }}>Use a different account</button>
+      </form>
+    );
   }
 
   return (
