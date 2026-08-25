@@ -24,7 +24,7 @@ export async function enqueueJob(input: {
   });
 }
 
-export async function claimNextJob(workerId = randomUUID()) {
+export async function claimNextJob(workerId: string = randomUUID()) {
   await connectDatabase();
   const now = new Date();
   const staleLock = new Date(now.getTime() - 15 * 60 * 1000);
