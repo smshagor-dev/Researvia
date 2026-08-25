@@ -9,7 +9,8 @@ const items = [
   { href: "/dashboard/universities", label: "Universities", icon: "university" },
   { href: "/dashboard/professors", label: "Professors", icon: "professor" },
   { href: "/dashboard/scholarships", label: "Scholarships", icon: "award" },
-  { href: "/dashboard/opportunities", label: "Opportunities", icon: "briefcase" }
+  { href: "/dashboard/opportunities", label: "Opportunities", icon: "briefcase" },
+  { href: "/dashboard/saved", label: "Saved items", icon: "saved" }
 ] as const;
 
 function NavIcon({ name }: { name: (typeof items)[number]["icon"] }) {
@@ -17,6 +18,7 @@ function NavIcon({ name }: { name: (typeof items)[number]["icon"] }) {
   if (name === "university") return <svg viewBox="0 0 24 24" className="size-4" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="m3 9 9-5 9 5"/><path d="M5 10v8M9.5 10v8M14.5 10v8M19 10v8M3 20h18"/></svg>;
   if (name === "award") return <svg viewBox="0 0 24 24" className="size-4" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><circle cx="12" cy="9" r="5"/><path d="m9 13-1 7 4-2 4 2-1-7"/></svg>;
   if (name === "briefcase") return <svg viewBox="0 0 24 24" className="size-4" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><rect x="3" y="7" width="18" height="12" rx="2"/><path d="M9 7V5h6v2M3 12h18"/></svg>;
+  if (name === "saved") return <svg viewBox="0 0 24 24" className="size-4" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="M6 4h12v17l-6-4-6 4V4Z"/></svg>;
   return <svg viewBox="0 0 24 24" className="size-4" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="m4 10 8-6 8 6"/><path d="M6.5 9.5V20h11V9.5"/><path d="M10 20v-6h4v6"/></svg>;
 }
 
