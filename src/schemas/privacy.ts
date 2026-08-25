@@ -1,0 +1,4 @@
+import { z } from "zod";
+export const privacyPreferenceSchema=z.object({aiProcessingAllowed:z.boolean().optional(),recommendationPersonalization:z.boolean().optional(),analyticsAllowed:z.boolean().optional(),emailSyncAllowed:z.boolean().optional()}).strict();
+export const deleteAccountSchema=z.object({password:z.string().min(1).max(128),confirmation:z.literal("DELETE MY ACCOUNT")}).strict();
+export const portfolioSchema=z.object({slug:z.string().trim().min(3).max(120),enabled:z.boolean(),headline:z.string().trim().max(240).optional(),summary:z.string().max(4000).optional(),showInterests:z.boolean().optional(),showSkills:z.boolean().optional(),showPublications:z.boolean().optional(),showProjects:z.boolean().optional(),showAcademicLinks:z.boolean().optional(),allowCvDownload:z.boolean().optional()}).strict();
