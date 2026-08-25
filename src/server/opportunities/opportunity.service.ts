@@ -2,7 +2,9 @@ import type { OpportunitySearchInput, ScholarshipSearchInput } from "@/schemas/o
 import { prepareOpportunityDatabase } from "@/server/db/opportunity-indexes";
 import { AppError } from "@/server/errors/AppError";
 import { Opportunity } from "@/server/models/Opportunity";
+import "@/server/models/Professor";
 import { Scholarship } from "@/server/models/Scholarship";
+import "@/server/models/University";
 
 export type DeadlineState = "OPEN" | "CLOSING_SOON" | "CLOSED" | "UNKNOWN";
 
