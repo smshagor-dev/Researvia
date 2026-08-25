@@ -1,0 +1,19 @@
+import { Schema, model, models, type InferSchemaType, type Model } from "mongoose";
+
+const watchlistSchema = new Schema({
+  userId: { type: Schema.Types.ObjectId, ref: "User", required: true, index: true },
+  name: { type: String, required: true, trim: true, maxlength: 160 },
+  targetType: { type: String, enum: ["SCHOLARSHIP", "OPPORTUNITY", "PROFESSOR", "LAB", "DEADLINE_CHANGE"], required: true },
+  query: { type: String, default: "", trim: true, maxlength: 500 },
+  countries: { type: [String], default: [] },
+  researchTopics: { type: [String], default: [] },
+  fundingTypes: { type: [String], default: [] },
+  professorId: { type: Schema.Types.ObjectId, ref: "Professor", default: null },
+  enabled: { type: Boolean, default: true },
+  lastEvaluatedAt: { type: Date, default: null },
+  lastMatchedAt: { type: Date, default: null }
+}, { timestamps: true, versionKey: false, strict: "throw" });
+watchlistSchema.index({ userId: 1, enabled: 1, updatedAt: -1 });
+
+export type WatchlistDocument = InferSchemaType<typeof watchlistSchema>;
+export const Watchlist = (models.Watchlist as Model<WatchlistDocument> | undefined) ?? model<WatchlistDocument>("Watchlist", watchlistSchema);

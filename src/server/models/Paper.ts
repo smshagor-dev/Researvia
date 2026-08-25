@@ -1,0 +1,28 @@
+import { Schema, model, models, type InferSchemaType, type Model } from "mongoose";
+
+const paperSchema = new Schema({
+  title: { type: String, required: true, trim: true, maxlength: 500 },
+  doi: { type: String, default: "", lowercase: true, trim: true, maxlength: 300 },
+  externalId: { type: String, required: true, trim: true, maxlength: 300 },
+  authors: { type: [String], default: [] },
+  professorIds: { type: [{ type: Schema.Types.ObjectId, ref: "Professor" }], default: [] },
+  topics: { type: [String], default: [] },
+  abstract: { type: String, default: "", maxlength: 12000 },
+  publicationDate: { type: Date, default: null, index: true },
+  citationCount: { type: Number, default: 0, min: 0 },
+  venue: { type: String, default: "", trim: true, maxlength: 300 },
+  landingUrl: { type: String, default: "", trim: true, maxlength: 700 },
+  source: { type: String, enum: ["OPENALEX", "CROSSREF", "ORCID", "MANUAL"], required: true },
+  sourceUrl: { type: String, required: true, trim: true, maxlength: 700 },
+  retrievedAt: { type: Date, default: Date.now },
+  lastVerifiedAt: { type: Date, default: Date.now, index: true },
+  status: { type: String, enum: ["DRAFT", "PUBLISHED", "ARCHIVED"], default: "DRAFT", index: true }
+}, { timestamps: true, versionKey: false, strict: "throw" });
+
+paperSchema.index({ source: 1, externalId: 1 }, { unique: true });
+paperSchema.index({ doi: 1 }, { unique: true, sparse: true });
+paperSchema.index({ title: "text", abstract: "text", topics: "text", authors: "text" });
+paperSchema.index({ status: 1, publicationDate: -1 });
+
+export type PaperDocument = InferSchemaType<typeof paperSchema>;
+export const Paper = (models.Paper as Model<PaperDocument> | undefined) ?? model<PaperDocument>("Paper", paperSchema);
