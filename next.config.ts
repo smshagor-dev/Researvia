@@ -1,10 +1,11 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  output: "standalone",
   poweredByHeader: false,
   reactStrictMode: true,
   experimental: {
-    typedEnv: true,
+    typedEnv: true
   },
   async headers() {
     return [
