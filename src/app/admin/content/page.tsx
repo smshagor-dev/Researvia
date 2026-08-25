@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { ContentStatusActions } from "@/components/admin/ContentStatusActions";
 import { requireAdmin } from "@/server/admin/admin.service";
 import { connectDatabase } from "@/server/db/mongoose";
@@ -26,7 +27,7 @@ export default async function AdminContentPage({ searchParams }: { searchParams:
 
   return <div className="mx-auto max-w-7xl space-y-6">
     <div><p className="text-sm font-medium text-slate-500">Publishing control</p><h1 className="mt-1 text-3xl font-semibold tracking-tight text-slate-950">Academic content</h1><p className="mt-2 text-sm text-slate-600">Review imported and manually curated records before they become student-visible. Imports arrive as drafts by default.</p></div>
-    <div className="flex flex-wrap gap-2">{allowed.map((item) => <a key={item} href={`/admin/content?type=${item}`} className={`rounded-xl px-4 py-2 text-sm font-medium capitalize ${item === type ? "bg-slate-950 text-white" : "border border-slate-200 bg-white text-slate-700"}`}>{item}s</a>)}</div>
+    <div className="flex flex-wrap gap-2">{allowed.map((item) => <Link key={item} href={`/admin/content?type=${item}`} className={`rounded-xl px-4 py-2 text-sm font-medium capitalize ${item === type ? "bg-slate-950 text-white" : "border border-slate-200 bg-white text-slate-700"}`}>{item}s</Link>)}</div>
     <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm"><div className="overflow-x-auto"><table className="min-w-full divide-y divide-slate-200 text-sm"><thead className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500"><tr><th className="px-5 py-3">Record</th><th className="px-5 py-3">Source</th><th className="px-5 py-3">Created</th><th className="px-5 py-3">Publishing state</th></tr></thead><tbody className="divide-y divide-slate-100">{rows.map((row) => <tr key={row.id} className="align-top"><td className="px-5 py-4"><p className="font-medium text-slate-950">{row.title}</p><p className="mt-1 text-xs text-slate-500">{row.subtitle}</p></td><td className="px-5 py-4 text-slate-600">{row.source}</td><td className="px-5 py-4 text-slate-600">{row.createdAt.toLocaleDateString()}</td><td className="px-5 py-4"><ContentStatusActions type={type} id={row.id} status={row.status}/></td></tr>)}</tbody></table></div>{rows.length === 0 ? <p className="p-8 text-center text-sm text-slate-500">No {type} records yet.</p> : null}</div>
   </div>;
 }
