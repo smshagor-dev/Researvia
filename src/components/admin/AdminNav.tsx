@@ -8,6 +8,7 @@ const items = [
   ["/admin/users", "Users"],
   ["/admin/content", "Academic content"],
   ["/admin/imports", "Imports & sync"],
+  ["/admin/data-sources", "Data sources"],
   ["/admin/jobs", "Background jobs"],
   ["/admin/audit", "Audit log"]
 ] as const;
