@@ -1,0 +1,4 @@
+import { z } from "zod";
+const opportunityTypes = ["PHD", "MASTERS", "RESEARCH_ASSISTANT", "TEACHING_ASSISTANT", "RESEARCH_INTERNSHIP", "INDUSTRY_RESEARCH_INTERNSHIP", "FELLOWSHIP", "CONFERENCE", "WORKSHOP", "SUMMER_PROGRAM", "RESEARCH_PROJECT", "OTHER"] as const;
+export const createFeedSourceSchema = z.object({ name: z.string().trim().min(2).max(180), entityType: z.enum(["SCHOLARSHIP", "OPPORTUNITY"]), format: z.enum(["AUTO", "JSON", "RSS", "ATOM"]).default("AUTO"), url: z.string().url().max(1000), defaultCountry: z.string().trim().min(2).max(120), defaultProvider: z.string().trim().min(2).max(220), defaultOpportunityType: z.enum(opportunityTypes).default("OTHER"), active: z.boolean().default(true) });
+export const providerSyncSchema = z.object({ provider: z.enum(["OPENALEX", "CROSSREF"]), query: z.string().trim().min(2).max(240), limit: z.number().int().min(1).max(50).default(25) });
