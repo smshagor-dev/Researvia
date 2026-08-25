@@ -10,7 +10,12 @@ const ALLOWED_TYPES = new Set([
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   "text/plain"
 ]);
-const KINDS = new Set(["CV", "TRANSCRIPT", "SOP", "PROPOSAL", "OTHER"]);
+const DOCUMENT_KINDS = ["CV", "TRANSCRIPT", "SOP", "PROPOSAL", "OTHER"] as const;
+type DocumentKind = (typeof DOCUMENT_KINDS)[number];
+
+function isDocumentKind(value: string): value is DocumentKind {
+  return (DOCUMENT_KINDS as readonly string[]).includes(value);
+}
 
 function safeName(value: string) {
   return value.replace(/[\\/\0\r\n]+/g, "_").slice(0, 255) || "document";
@@ -23,24 +28,25 @@ async function bucket() {
   return new mongoose.mongo.GridFSBucket(db, { bucketName: "studentDocuments" });
 }
 
-export async function uploadStudentDocument(userId: string, file: File, kind: string) {
-  if (!KINDS.has(kind)) throw new AppError("INVALID_DOCUMENT_KIND", 400, "Unsupported document type.");
+export async function uploadStudentDocument(userId: string, file: File, kindInput: string) {
+  if (!isDocumentKind(kindInput)) throw new AppError("INVALID_DOCUMENT_KIND", 400, "Unsupported document type.");
   if (!ALLOWED_TYPES.has(file.type)) throw new AppError("UNSUPPORTED_FILE_TYPE", 400, "Only PDF, DOC, DOCX, and text documents are allowed.");
   if (file.size < 1 || file.size > MAX_BYTES) throw new AppError("FILE_SIZE_INVALID", 400, "Documents must be 10 MB or smaller.");
 
+  const kind: DocumentKind = kindInput;
   const storage = await bucket();
   const name = safeName(file.name);
   const buffer = Buffer.from(await file.arrayBuffer());
   const upload = storage.openUploadStream(name, {
-    metadata: { userId, kind, mimeType: file.type },
-    contentType: file.type
+    metadata: { userId, kind, mimeType: file.type }
   });
   await new Promise<void>((resolve, reject) => {
     upload.end(buffer, (error?: Error | null) => error ? reject(error) : resolve());
   });
 
   try {
-    const document = await StudentDocument.create({ userId, fileId: upload.id, kind, originalName: name, mimeType: file.type, size: file.size });
+    const document = new StudentDocument({ userId, fileId: upload.id, kind, originalName: name, mimeType: file.type, size: file.size });
+    await document.save();
     return document.toObject();
   } catch (error) {
     await storage.delete(upload.id).catch(() => undefined);
