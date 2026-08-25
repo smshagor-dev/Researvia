@@ -17,12 +17,19 @@ export function TwoFactorPanel() {
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  async function load() {
+  async function refreshStatus() {
     const response = await fetch("/api/v1/me/security/2fa", { cache: "no-store" });
     if (response.ok) setStatus(((await response.json()) as { data: Status }).data);
   }
 
-  useEffect(() => { void load(); }, []);
+  useEffect(() => {
+    let cancelled = false;
+    void fetch("/api/v1/me/security/2fa", { cache: "no-store" })
+      .then(async (response) => response.ok ? ((await response.json()) as { data: Status }).data : null)
+      .then((nextStatus) => { if (!cancelled && nextStatus) setStatus(nextStatus); })
+      .catch(() => undefined);
+    return () => { cancelled = true; };
+  }, []);
 
   async function start() {
     setError(null); setMessage(null); setRecoveryCodes([]);
@@ -37,7 +44,7 @@ export function TwoFactorPanel() {
     const response = await fetch("/api/v1/me/security/2fa", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ code: form.get("code") }) });
     if (!response.ok) { setError((await readClientApiError(response)).message); return; }
     const data = ((await response.json()) as { data: { recoveryCodes: string[] } }).data;
-    setRecoveryCodes(data.recoveryCodes); setSetup(null); setMessage("Two-factor authentication is now enabled. Store the recovery codes somewhere safe."); await load();
+    setRecoveryCodes(data.recoveryCodes); setSetup(null); setMessage("Two-factor authentication is now enabled. Store the recovery codes somewhere safe."); await refreshStatus();
   }
 
   async function disable(event: FormEvent<HTMLFormElement>) {
@@ -45,7 +52,7 @@ export function TwoFactorPanel() {
     const form = new FormData(event.currentTarget);
     const response = await fetch("/api/v1/me/security/2fa", { method: "DELETE", headers: { "content-type": "application/json" }, body: JSON.stringify({ code: form.get("code") }) });
     if (!response.ok) { setError((await readClientApiError(response)).message); return; }
-    setMessage("Two-factor authentication disabled."); setRecoveryCodes([]); await load();
+    setMessage("Two-factor authentication disabled."); setRecoveryCodes([]); await refreshStatus();
   }
 
   return <div className="space-y-6">
