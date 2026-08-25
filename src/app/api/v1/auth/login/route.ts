@@ -16,12 +16,15 @@ export async function POST(request: NextRequest) {
     const input = await readJson(request, loginSchema);
     const ip = getClientIp(request);
     await enforceRateLimit("auth:login", `${ip}:${input.email}`, 10, 15 * 60 * 1000);
-    const session = await loginStudent(input, {
+    const result = await loginStudent(input, {
       ipAddress: ip === "unknown" ? null : ip,
       userAgent: getUserAgent(request)
     });
-    const response = apiSuccess({ message: "Signed in successfully." });
-    attachSessionCookie(response, session.token, session.expiresAt);
+    if (result.requiresTwoFactor) {
+      return apiSuccess({ requiresTwoFactor: true, challengeToken: result.challengeToken }, 202);
+    }
+    const response = apiSuccess({ message: "Signed in successfully.", requiresTwoFactor: false });
+    attachSessionCookie(response, result.token, result.expiresAt);
     return response;
   } catch (error) {
     return handleApiError(error, requestId);
