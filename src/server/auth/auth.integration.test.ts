@@ -88,6 +88,8 @@ describe("authentication lifecycle", () => {
       { ipAddress: "127.0.0.1", userAgent: "vitest" }
     );
 
+    expect(session.requiresTwoFactor).toBe(false);
+    if (session.requiresTwoFactor) throw new Error("Unexpected two-factor challenge for account without 2FA.");
     expect(session.token.length).toBeGreaterThan(32);
     expect(await UserSession.countDocuments({ revokedAt: null })).toBe(1);
   });
@@ -114,12 +116,13 @@ describe("authentication lifecycle", () => {
       )
     ).rejects.toMatchObject({ code: "INVALID_CREDENTIALS" });
 
-    await expect(
-      loginStudent(
-        { email: account.email, password: "replacement-password-456", rememberMe: false },
-        { ipAddress: null, userAgent: null }
-      )
-    ).resolves.toMatchObject({ token: expect.any(String), expiresAt: expect.any(Date) });
+    const newLogin = await loginStudent(
+      { email: account.email, password: "replacement-password-456", rememberMe: false },
+      { ipAddress: null, userAgent: null }
+    );
+    expect(newLogin.requiresTwoFactor).toBe(false);
+    if (newLogin.requiresTwoFactor) throw new Error("Unexpected two-factor challenge after password reset.");
+    expect(newLogin).toMatchObject({ token: expect.any(String), expiresAt: expect.any(Date) });
 
     await expect(
       resetPassword({ token: resetToken as string, password: "another-password-789" })
