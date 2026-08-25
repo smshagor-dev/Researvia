@@ -95,7 +95,7 @@ export async function getUserBySessionToken(token: string | undefined): Promise<
     id: user._id.toString(),
     displayName: user.displayName,
     email: user.email,
-    role: user.role,
+    role: user.role as SessionUser["role"],
     emailVerifiedAt: user.emailVerifiedAt ? new Date(user.emailVerifiedAt).toISOString() : null
   };
 }

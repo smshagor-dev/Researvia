@@ -3,13 +3,28 @@ import { connectDatabase } from "@/server/db/mongoose";
 import { AppError } from "@/server/errors/AppError";
 import { RateLimitBucket } from "@/server/models/RateLimitBucket";
 
+let rateLimitIndexesPromise: Promise<void> | null = null;
+
+async function prepareRateLimitStore(): Promise<void> {
+  await connectDatabase();
+  if (!rateLimitIndexesPromise) {
+    rateLimitIndexesPromise = RateLimitBucket.createIndexes()
+      .then(() => undefined)
+      .catch((error: unknown) => {
+        rateLimitIndexesPromise = null;
+        throw error;
+      });
+  }
+  await rateLimitIndexesPromise;
+}
+
 export async function enforceRateLimit(
   scope: string,
   identifier: string,
   limit: number,
   windowMs: number
 ): Promise<void> {
-  await connectDatabase();
+  await prepareRateLimitStore();
 
   const now = Date.now();
   const windowStart = Math.floor(now / windowMs) * windowMs;

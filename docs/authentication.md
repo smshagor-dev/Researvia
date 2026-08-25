@@ -31,6 +31,10 @@ Verification and reset links use 256-bit random opaque tokens. Only token hashes
 
 Raw verification, reset and session tokens must never be logged.
 
+## Production indexes
+
+The production MongoDB connection deliberately keeps Mongoose `autoIndex` disabled. The auth subsystem explicitly provisions its required indexes through `Model.createIndexes()` on first use, with a per-process promise guard. This ensures unique user-email and token/rate-limit TTL indexes are not dependent on development-only auto-index behavior.
+
 ## Passwords
 
 Passwords are hashed with Node.js `scrypt` using a per-password random salt. New passwords must contain 12-128 characters.

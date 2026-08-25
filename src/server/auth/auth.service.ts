@@ -1,4 +1,4 @@
-import { connectDatabase } from "@/server/db/mongoose";
+import { prepareAuthDatabase } from "@/server/db/auth-indexes";
 import { assertEmailReady } from "@/server/email/mailer";
 import { sendPasswordResetEmail, sendVerificationEmail } from "@/server/email/auth-email";
 import { AppError } from "@/server/errors/AppError";
@@ -20,7 +20,7 @@ function isDuplicateKey(error: unknown): boolean {
 
 export async function registerStudent(input: RegisterInput): Promise<{ email: string }> {
   assertEmailReady();
-  await connectDatabase();
+  await prepareAuthDatabase();
 
   const existing = await User.exists({ email: input.email, status: { $ne: "DELETED" } });
   if (existing) {
@@ -67,7 +67,7 @@ export async function registerStudent(input: RegisterInput): Promise<{ email: st
 }
 
 export async function verifyEmailAddress(token: string): Promise<void> {
-  await connectDatabase();
+  await prepareAuthDatabase();
   const now = new Date();
   const claimed = await EmailVerificationToken.findOneAndUpdate(
     { tokenHash: hashOpaqueToken(token), usedAt: null, expiresAt: { $gt: now } },
@@ -87,7 +87,7 @@ export async function verifyEmailAddress(token: string): Promise<void> {
 
 export async function resendVerificationEmail(email: string): Promise<void> {
   assertEmailReady();
-  await connectDatabase();
+  await prepareAuthDatabase();
   const user = await User.findOne({ email, status: "ACTIVE", emailVerifiedAt: null }).lean();
   if (!user) return;
 
@@ -110,7 +110,7 @@ export async function loginStudent(
   input: LoginInput,
   metadata: { ipAddress: string | null; userAgent: string | null }
 ): Promise<{ token: string; expiresAt: Date }> {
-  await connectDatabase();
+  await prepareAuthDatabase();
   const user = await User.findOne({ email: input.email }).select("+passwordHash");
 
   if (!user?.passwordHash || !(await verifyPassword(input.password, user.passwordHash))) {
@@ -138,7 +138,7 @@ export async function loginStudent(
 
 export async function requestPasswordReset(email: string): Promise<void> {
   assertEmailReady();
-  await connectDatabase();
+  await prepareAuthDatabase();
   const user = await User.findOne({ email, status: "ACTIVE" }).lean();
   if (!user) return;
 
@@ -158,7 +158,7 @@ export async function requestPasswordReset(email: string): Promise<void> {
 }
 
 export async function resetPassword(input: ResetPasswordInput): Promise<void> {
-  await connectDatabase();
+  await prepareAuthDatabase();
   const now = new Date();
   const claimed = await PasswordResetToken.findOneAndUpdate(
     { tokenHash: hashOpaqueToken(input.token), usedAt: null, expiresAt: { $gt: now } },
