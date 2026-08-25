@@ -2,6 +2,7 @@ import { connectDatabase } from "@/server/db/mongoose";
 import { Application } from "@/server/models/Application";
 import { ApplicationTask } from "@/server/models/ApplicationTask";
 import { ApplicationTimeline } from "@/server/models/ApplicationTimeline";
+import "@/server/models/University";
 
 let applicationIndexesPromise: Promise<void> | null = null;
 
