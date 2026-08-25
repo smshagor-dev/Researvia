@@ -1,0 +1,66 @@
+import type { SavedItemType, CreateSavedItemInput, UpdateSavedItemInput } from "@/schemas/saved";
+import { prepareSavedDatabase } from "@/server/db/saved-indexes";
+import { AppError } from "@/server/errors/AppError";
+import { Opportunity } from "@/server/models/Opportunity";
+import { Professor } from "@/server/models/Professor";
+import { SavedItem } from "@/server/models/SavedItem";
+import { Scholarship } from "@/server/models/Scholarship";
+import { University } from "@/server/models/University";
+
+export type SavedItemDto = {
+  id: string; itemType: SavedItemType; targetId: string; targetSlug: string; title: string; subtitle: string;
+  collection: string; notes: string; tags: string[]; href: string; createdAt: string; updatedAt: string;
+};
+
+function hrefFor(type: SavedItemType, slug: string) {
+  const roots: Record<SavedItemType, string> = { PROFESSOR: "professors", UNIVERSITY: "universities", SCHOLARSHIP: "scholarships", OPPORTUNITY: "opportunities" };
+  return `/dashboard/${roots[type]}/${slug}`;
+}
+
+function serialize(value: Record<string, unknown>): SavedItemDto {
+  const type = String(value.itemType) as SavedItemType;
+  const slug = String(value.targetSlug);
+  return { id: String(value._id), itemType: type, targetId: String(value.targetId), targetSlug: slug, title: String(value.titleSnapshot), subtitle: String(value.subtitleSnapshot ?? ""), collection: String(value.collection ?? "Saved"), notes: String(value.notes ?? ""), tags: Array.isArray(value.tags) ? value.tags.map(String) : [], href: hrefFor(type, slug), createdAt: new Date(value.createdAt as Date).toISOString(), updatedAt: new Date(value.updatedAt as Date).toISOString() };
+}
+
+async function resolvePublishedTarget(type: SavedItemType, targetId: string): Promise<{ slug: string; title: string; subtitle: string }> {
+  if (type === "PROFESSOR") { const item = await Professor.findOne({ _id: targetId, status: "PUBLISHED" }).populate("universityId", "name").lean(); if (!item) throw new AppError("TARGET_NOT_FOUND", 404, "Professor not found."); const university = item.universityId && typeof item.universityId === "object" ? item.universityId as unknown as { name?: string } : {}; return { slug: item.slug, title: item.fullName, subtitle: university.name || item.department || item.country }; }
+  if (type === "UNIVERSITY") { const item = await University.findOne({ _id: targetId, status: "PUBLISHED" }).lean(); if (!item) throw new AppError("TARGET_NOT_FOUND", 404, "University not found."); return { slug: item.slug, title: item.name, subtitle: [item.city, item.country].filter(Boolean).join(", ") }; }
+  if (type === "SCHOLARSHIP") { const item = await Scholarship.findOne({ _id: targetId, status: "PUBLISHED" }).lean(); if (!item) throw new AppError("TARGET_NOT_FOUND", 404, "Scholarship not found."); return { slug: item.slug, title: item.name, subtitle: `${item.provider} • ${item.country}` }; }
+  const item = await Opportunity.findOne({ _id: targetId, status: "PUBLISHED" }).lean(); if (!item) throw new AppError("TARGET_NOT_FOUND", 404, "Opportunity not found."); return { slug: item.slug, title: item.title, subtitle: `${item.organization} • ${item.country}` };
+}
+
+export async function saveItem(userId: string, input: CreateSavedItemInput): Promise<SavedItemDto> {
+  await prepareSavedDatabase();
+  const target = await resolvePublishedTarget(input.itemType, input.targetId);
+  const saved = await SavedItem.findOneAndUpdate(
+    { userId, itemType: input.itemType, targetId: input.targetId },
+    { $setOnInsert: { userId, itemType: input.itemType, targetId: input.targetId }, $set: { targetSlug: target.slug, titleSnapshot: target.title, subtitleSnapshot: target.subtitle, collection: input.collection, notes: input.notes, tags: input.tags } },
+    { upsert: true, new: true, setDefaultsOnInsert: true, runValidators: true }
+  ).lean();
+  if (!saved) throw new AppError("SAVE_FAILED", 500, "Item could not be saved.");
+  return serialize(saved as unknown as Record<string, unknown>);
+}
+
+export async function listSavedItems(userId: string, input: { itemType?: SavedItemType | ""; collection?: string }) {
+  await prepareSavedDatabase();
+  const filter: Record<string, unknown> = { userId };
+  if (input.itemType) filter.itemType = input.itemType;
+  if (input.collection) filter.collection = input.collection;
+  const items = await SavedItem.find(filter).sort({ createdAt: -1 }).limit(500).lean();
+  const collections = await SavedItem.distinct("collection", { userId });
+  return { items: items.map((item) => serialize(item as unknown as Record<string, unknown>)), collections: collections.map(String).sort() };
+}
+
+export async function updateSavedItem(userId: string, savedId: string, input: UpdateSavedItemInput): Promise<SavedItemDto> {
+  await prepareSavedDatabase();
+  const item = await SavedItem.findOneAndUpdate({ _id: savedId, userId }, { $set: input }, { new: true, runValidators: true }).lean();
+  if (!item) throw new AppError("SAVED_ITEM_NOT_FOUND", 404, "Saved item not found.");
+  return serialize(item as unknown as Record<string, unknown>);
+}
+
+export async function deleteSavedItem(userId: string, savedId: string): Promise<void> {
+  await prepareSavedDatabase();
+  const result = await SavedItem.deleteOne({ _id: savedId, userId });
+  if (result.deletedCount !== 1) throw new AppError("SAVED_ITEM_NOT_FOUND", 404, "Saved item not found.");
+}

@@ -1,0 +1,4 @@
+"use client";
+import { useState } from "react";
+import type { SavedItemType } from "@/schemas/saved";
+export function SaveButton({ itemType, targetId }: { itemType: SavedItemType; targetId: string }) { const [state,setState]=useState<"idle"|"saving"|"saved"|"error">("idle"); async function save(){setState("saving");try{const response=await fetch("/api/v1/me/saved",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({itemType,targetId})});if(!response.ok)throw new Error();setState("saved");}catch{setState("error");}} return <button type="button" onClick={save} disabled={state==="saving"||state==="saved"} className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:opacity-60">{state==="saving"?"Saving…":state==="saved"?"Saved ✓":state==="error"?"Try saving again":"Save"}</button>; }
