@@ -4,16 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 const items = [
-  ["/admin", "Overview"],
-  ["/admin/users", "Users"],
-  ["/admin/content", "Academic content"],
-  ["/admin/imports", "Imports & sync"],
-  ["/admin/data-sources", "Data sources"],
-  ["/admin/jobs", "Background jobs"],
-  ["/admin/audit", "Audit log"]
+  ["/admin", "Overview"], ["/admin/users", "Users"], ["/admin/content", "Academic content"], ["/admin/imports", "Imports & sync"], ["/admin/data-sources", "Data sources"], ["/admin/data-quality", "Data quality"], ["/admin/analytics", "Analytics"], ["/admin/feature-flags", "Feature flags"], ["/admin/jobs", "Background jobs"], ["/admin/audit", "Audit log"]
 ] as const;
 
-export function AdminNav() {
-  const pathname = usePathname();
-  return <nav className="space-y-1">{items.map(([href, label]) => { const active = href === "/admin" ? pathname === href : pathname.startsWith(href); return <Link key={href} href={href} className={`block rounded-lg px-3 py-2.5 text-sm font-medium ${active ? "bg-slate-950 text-white" : "text-slate-600 hover:bg-slate-100 hover:text-slate-950"}`}>{label}</Link>; })}</nav>;
-}
+export function AdminNav() { const pathname = usePathname(); return <nav className="space-y-1">{items.map(([href,label])=>{const active=href==="/admin"?pathname===href:pathname.startsWith(href);return <Link key={href} href={href} className={`block rounded-lg px-3 py-2.5 text-sm font-medium ${active?"bg-slate-950 text-white":"text-slate-600 hover:bg-slate-100 hover:text-slate-950"}`}>{label}</Link>})}</nav>; }
