@@ -2,11 +2,20 @@ export type CurrentDegree = "HIGH_SCHOOL" | "BACHELORS" | "MASTERS" | "PHD" | "O
 export type TargetDegree = "BACHELORS" | "MASTERS" | "PHD" | "RESEARCH" | "OTHER";
 export type FundingPreference = "ANY" | "FULLY_FUNDED" | "FULL_OR_PARTIAL" | "SELF_FUNDED";
 export type ProfileVisibility = "PRIVATE" | "RECOMMENDATION_ONLY";
+export type Gender = "" | "MALE" | "FEMALE" | "NON_BINARY" | "PREFER_NOT_TO_SAY" | "OTHER";
 
 export type StudentProfileDto = {
   id: string;
   userId: string;
+  fullName: string;
+  headline: string;
+  phone: string;
+  dateOfBirth: string | null;
+  gender: Gender;
+  nationality: string;
   country: string;
+  city: string;
+  photoUrl: string | null;
   currentUniversity: string;
   currentDegree: CurrentDegree | null;
   fieldOfStudy: string;
@@ -25,8 +34,11 @@ export type StudentProfileDto = {
   github: string;
   googleScholar: string;
   orcid: string;
+  researchGate: string;
   profileVisibility: ProfileVisibility;
   onboardingStep: number;
   onboardingCompletedAt: string | null;
   completion: number;
 };
+
+export type StudentProfileSectionRecord = Record<string, unknown> & { id?: string };
