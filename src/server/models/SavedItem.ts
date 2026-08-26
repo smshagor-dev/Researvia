@@ -3,7 +3,7 @@ import { Schema, model, models, type InferSchemaType, type Model } from "mongoos
 const savedItemSchema = new Schema(
   {
     userId: { type: Schema.Types.ObjectId, ref: "User", required: true, index: true },
-    itemType: { type: String, enum: ["PROFESSOR", "UNIVERSITY", "SCHOLARSHIP", "OPPORTUNITY"], required: true },
+    itemType: { type: String, enum: ["PROFESSOR", "UNIVERSITY", "SCHOLARSHIP", "OPPORTUNITY", "LAB", "PROGRAM"], required: true },
     targetId: { type: Schema.Types.ObjectId, required: true },
     targetSlug: { type: String, required: true, trim: true, maxlength: 320 },
     titleSnapshot: { type: String, required: true, trim: true, maxlength: 320 },
@@ -20,5 +20,4 @@ savedItemSchema.index({ userId: 1, collection: 1, createdAt: -1 });
 savedItemSchema.index({ userId: 1, itemType: 1, createdAt: -1 });
 
 export type SavedItemDocument = InferSchemaType<typeof savedItemSchema>;
-export const SavedItem =
-  (models.SavedItem as Model<SavedItemDocument> | undefined) ?? model<SavedItemDocument>("SavedItem", savedItemSchema);
+export const SavedItem = (models.SavedItem as Model<SavedItemDocument> | undefined) ?? model<SavedItemDocument>("SavedItem", savedItemSchema);
