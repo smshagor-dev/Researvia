@@ -13,9 +13,20 @@ const schema = new Schema({
   reminderAt: { type: Date, default: null, index: true },
   studentReferenceId: { type: Schema.Types.ObjectId, default: null },
   requestedAt: { type: Date, default: null },
+  confirmedAt: { type: Date, default: null },
+  declinedAt: { type: Date, default: null },
   receivedAt: { type: Date, default: null },
-  lastMessageId: { type: String, default: null, maxlength: 64 }
+  lastMessageId: { type: String, default: null, maxlength: 64 },
+  portalTokenHash: { type: String, default: null, maxlength: 64, select: false },
+  portalExpiresAt: { type: Date, default: null, index: true },
+  portalLastAccessedAt: { type: Date, default: null },
+  confidentialFileId: { type: Schema.Types.ObjectId, default: null, select: false },
+  confidentialOriginalName: { type: String, default: "", maxlength: 255 },
+  confidentialMimeType: { type: String, default: "", maxlength: 160 },
+  confidentialSize: { type: Number, default: null, min: 1, max: 10485760 },
+  refereeMessage: { type: String, default: "", maxlength: 8000 }
 }, { timestamps: true, versionKey: false, strict: "throw" });
 schema.index({ userId: 1, status: 1, deadline: 1 });
+schema.index({ portalTokenHash: 1 }, { unique: true, sparse: true });
 export type RecommendationRequestDocument = InferSchemaType<typeof schema>;
 export const RecommendationRequest = (models.RecommendationRequest as Model<RecommendationRequestDocument> | undefined) ?? model<RecommendationRequestDocument>("RecommendationRequest", schema);

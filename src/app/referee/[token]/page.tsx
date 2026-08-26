@@ -1,0 +1,3 @@
+import { RefereePortalClient } from "@/components/productivity/RefereePortalClient";
+export const metadata={title:"Confidential Recommendation | ResearVia",robots:{index:false,follow:false}};
+export default async function RefereePortalPage({params}:{params:Promise<{token:string}>}){const {token}=await params;return <main className="min-h-screen bg-slate-50 px-4 py-12"><div className="mx-auto max-w-2xl"><div className="mb-6"><span className="text-lg font-semibold tracking-tight text-slate-950">ResearVia</span><p className="mt-1 text-sm text-slate-500">Secure academic reference submission</p></div><RefereePortalClient token={token}/></div></main>}
