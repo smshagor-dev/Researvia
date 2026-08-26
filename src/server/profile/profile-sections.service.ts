@@ -76,7 +76,38 @@ function serializeRecord(value: unknown): PlainRecord {
   return serializeValue(value) as PlainRecord;
 }
 
+function legacyDegree(value: unknown): "HIGH_SCHOOL" | "BACHELORS" | "MASTERS" | "PHD" | "OTHER" {
+  const normalized = String(value ?? "").toLowerCase();
+  if (/ph\.?d|doctor/.test(normalized)) return "PHD";
+  if (/master|msc|m\.sc|ma\b|m\.eng/.test(normalized)) return "MASTERS";
+  if (/bachelor|bsc|b\.sc|ba\b|b\.eng/.test(normalized)) return "BACHELORS";
+  if (/high school|secondary|hsc|a[- ]?level/.test(normalized)) return "HIGH_SCHOOL";
+  return "OTHER";
+}
+
 async function syncLegacyProfile(userId: string, section: ProfileSectionKey) {
+  if (section === "education") {
+    const row = await StudentEducation.findOne({ userId }).sort({ currentlyStudying: -1, endDate: -1, startDate: -1 }).lean();
+    if (!row) {
+      await StudentProfile.updateOne({ userId }, { $set: { currentUniversity: "", currentDegree: null, fieldOfStudy: "", graduationYear: null, gpa: "" } }, { upsert: true });
+      return;
+    }
+    const graduationYear = row.endDate ? new Date(row.endDate as Date).getUTCFullYear() : null;
+    await StudentProfile.updateOne(
+      { userId },
+      {
+        $set: {
+          currentUniversity: String(row.institution ?? ""),
+          currentDegree: legacyDegree(row.degree),
+          fieldOfStudy: String(row.fieldOfStudy ?? ""),
+          graduationYear: Number.isFinite(graduationYear) ? graduationYear : null,
+          gpa: String(row.gpa ?? "")
+        }
+      },
+      { upsert: true }
+    );
+    return;
+  }
   if (section === "skills") {
     const rows = await StudentSkill.find({ userId }).select({ name: 1 }).lean();
     await StudentProfile.updateOne({ userId }, { $set: { skills: rows.map((row) => String(row.name)) } }, { upsert: true });
@@ -97,6 +128,25 @@ async function syncLegacyProfile(userId: string, section: ProfileSectionKey) {
     await StudentProfile.updateOne(
       { userId },
       { $set: { researchInterests: interests, preferredResearchAreas: Array.isArray(row.preferredDomains) ? row.preferredDomains : [] } },
+      { upsert: true }
+    );
+    return;
+  }
+  if (section === "links") {
+    const rows = await StudentLink.find({ userId }).lean();
+    const value = (type: string) => String(rows.find((row) => row.type === type)?.url ?? "");
+    await StudentProfile.updateOne(
+      { userId },
+      {
+        $set: {
+          website: value("WEBSITE") || value("PORTFOLIO"),
+          linkedin: value("LINKEDIN"),
+          github: value("GITHUB"),
+          googleScholar: value("GOOGLE_SCHOLAR"),
+          orcid: value("ORCID"),
+          researchGate: value("RESEARCHGATE")
+        }
+      },
       { upsert: true }
     );
     return;
