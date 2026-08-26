@@ -11,6 +11,7 @@ export async function POST(request:Request){const requestId=getRequestId(request
 enqueueJob({type:"EVALUATE_WATCHLISTS",idempotencyKey:`watchlists:${hourlyKey()}`,maxAttempts:3}),
 enqueueJob({type:"SCAN_ACADEMIC_REMINDERS",idempotencyKey:`academic-reminders:${hourlyKey()}`,maxAttempts:3}),
 enqueueJob({type:"SCAN_SYSTEM_IMAP",payload:{reason:"periodic-reconciliation"},idempotencyKey:`system-imap-scan:${hourlyKey()}`,maxAttempts:3}),
+enqueueJob({type:"SCAN_SYSTEM_AUTO_REPLIES",idempotencyKey:`system-auto-reply-scan:${hourlyKey()}`,maxAttempts:3}),
 enqueueJob({type:"SCAN_PROFESSOR_CONTACT_ENRICHMENT",payload:{reason:"periodic-reconciliation"},idempotencyKey:`professor-contact-reconciliation:${dailyKey()}`,maxAttempts:3}),
 enqueueJob({type:"SCAN_PROFESSOR_MATCHES",payload:{reason:"periodic-reconciliation"},idempotencyKey:`professor-match-reconciliation:${sixHourKey()}`,maxAttempts:3}),
 enqueueJob({type:"SCAN_ACADEMIC_MATCHES",payload:{reason:"periodic-reconciliation"},idempotencyKey:`academic-match-reconciliation:${sixHourKey()}`,maxAttempts:3}),
