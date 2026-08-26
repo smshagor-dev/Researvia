@@ -95,12 +95,22 @@ export async function deliverNotificationPush(notificationId: string) {
   let transientFailure: Error | null = null;
 
   for (const subscription of subscriptions) {
+    const keys = subscription.keys;
+    if (!keys?.p256dh || !keys.auth) {
+      disabled += 1;
+      await PushSubscription.updateOne(
+        { _id: subscription._id },
+        { $set: { enabled: false, lastFailureAt: new Date(), lastError: "Stored push subscription keys are incomplete." }, $inc: { failureCount: 1 } }
+      );
+      continue;
+    }
+
     try {
       await webpush.sendNotification(
         {
           endpoint: subscription.endpoint,
           expirationTime: subscription.expirationTime ? new Date(subscription.expirationTime).getTime() : null,
-          keys: { p256dh: subscription.keys.p256dh, auth: subscription.keys.auth }
+          keys: { p256dh: keys.p256dh, auth: keys.auth }
         },
         payload,
         { TTL: 60 * 60 * 24, urgency: "normal" }
