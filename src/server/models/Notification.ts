@@ -6,7 +6,7 @@ const schema = new Schema({
   title: { type: String, required: true, maxlength: 180 },
   message: { type: String, required: true, maxlength: 1200 },
   href: { type: String, default: null, maxlength: 500 },
-  dedupeKey: { type: String, default: null, maxlength: 260 },
+  dedupeKey: { type: String, maxlength: 260 },
   metadata: { type: Schema.Types.Mixed, default: {} },
   readAt: { type: Date, default: null, index: true }
 }, { timestamps: true, versionKey: false, strict: "throw" });
