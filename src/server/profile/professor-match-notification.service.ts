@@ -1,4 +1,5 @@
 import { connectDatabase } from "@/server/db/mongoose";
+import { prepareNotificationDatabase } from "@/server/db/notification-indexes";
 import { enqueueJob } from "@/server/jobs/job.service";
 import { ProfessorMatchAlert } from "@/server/models/ProfessorMatchAlert";
 import { User } from "@/server/models/User";
@@ -47,7 +48,7 @@ function matchMessage(match: {
 }
 
 export async function evaluateProfessorMatchesForUser(userId: string) {
-  await connectDatabase();
+  await prepareNotificationDatabase();
   const user = await User.findOne({ _id: userId, role: "STUDENT", status: "ACTIVE" }).select({ _id: 1 }).lean();
   if (!user) return { skipped: "inactive-or-missing-student", evaluated: 0, notified: 0 };
 
