@@ -21,6 +21,7 @@ const items = [
   { href: "/dashboard/recommendations", label: "Recommendations", icon: "ai" },
   { href: "/dashboard/cv-intelligence", label: "CV Intelligence", icon: "documents" },
   { href: "/dashboard/outreach", label: "Outreach", icon: "outreach" },
+  { href: "/dashboard/mail", label: "Mailbox", icon: "email" },
   { href: "/dashboard/email-accounts", label: "Email accounts", icon: "email" },
   { href: "/dashboard/documents", label: "Documents", icon: "documents" },
   { href: "/dashboard/notifications", label: "Notifications", icon: "notifications" },
