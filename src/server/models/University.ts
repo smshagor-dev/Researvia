@@ -9,6 +9,7 @@ const universitySchema = new Schema(
     city: { type: String, default: "", trim: true, maxlength: 120 },
     region: { type: String, default: "", trim: true, maxlength: 160 },
     website: { type: String, default: "", trim: true, maxlength: 500 },
+    officialDomains: { type: [{ type: String, trim: true, lowercase: true, maxlength: 253 }], default: [] },
     description: { type: String, default: "", trim: true, maxlength: 3000 },
     logoUrl: { type: String, default: "", trim: true, maxlength: 500 },
     externalIds: {
@@ -29,6 +30,7 @@ universitySchema.index({ name: "text", aliases: "text", city: "text", country: "
 universitySchema.index({ status: 1, country: 1, name: 1 });
 universitySchema.index({ "externalIds.ror": 1 }, { sparse: true });
 universitySchema.index({ "externalIds.openAlex": 1 }, { sparse: true });
+universitySchema.index({ officialDomains: 1 });
 
 export type UniversityDocument = InferSchemaType<typeof universitySchema>;
 export const University =
