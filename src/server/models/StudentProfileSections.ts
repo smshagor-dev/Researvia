@@ -6,7 +6,7 @@ type SectionRecord = {
   updatedAt?: Date;
 } & Record<string, unknown>;
 
-const baseOptions = { timestamps: true, versionKey: false, strict: "throw" as const };
+const baseOptions = { timestamps: true, versionKey: false, strict: "throw" } as const;
 const userId = { type: Schema.Types.ObjectId, ref: "User", required: true, index: true };
 const strings = { type: [String], default: [] };
 
