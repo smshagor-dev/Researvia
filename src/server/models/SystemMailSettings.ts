@@ -10,6 +10,11 @@ const schema = new Schema({
   forwardingEmail: { type: String, default: "", trim: true, lowercase: true, maxlength: 320 },
   webNotifications: { type: Boolean, default: true },
   pushNotifications: { type: Boolean, default: true },
+  autoReplyEnabled: { type: Boolean, default: false, index: true },
+  autoReplySubject: { type: String, default: "Automatic reply", maxlength: 500 },
+  autoReplyText: { type: String, default: "", maxlength: 10000 },
+  autoReplyStartsAt: { type: Date, default: null },
+  autoReplyEndsAt: { type: Date, default: null },
   smtpHost: { type: String, default: "", trim: true, maxlength: 255 },
   smtpPort: { type: Number, default: 587, min: 1, max: 65535 },
   smtpSecure: { type: Boolean, default: false },
@@ -35,6 +40,7 @@ const schema = new Schema({
 
 schema.index({ deliveryMode: 1, updatedAt: -1 });
 schema.index({ imapSyncEnabled: 1, lastImapSyncAt: 1 });
+schema.index({ autoReplyEnabled: 1, autoReplyEndsAt: 1 });
 
 export type SystemMailSettingsDocument = InferSchemaType<typeof schema>;
 export const SystemMailSettings = (models.SystemMailSettings as Model<SystemMailSettingsDocument> | undefined) ?? model<SystemMailSettingsDocument>("SystemMailSettings", schema);
