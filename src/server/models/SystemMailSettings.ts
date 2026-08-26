@@ -15,6 +15,7 @@ const schema = new Schema({
   autoReplyText: { type: String, default: "", maxlength: 10000 },
   autoReplyStartsAt: { type: Date, default: null },
   autoReplyEndsAt: { type: Date, default: null },
+  autoReplyLastScanAt: { type: Date, default: null },
   smtpHost: { type: String, default: "", trim: true, maxlength: 255 },
   smtpPort: { type: Number, default: 587, min: 1, max: 65535 },
   smtpSecure: { type: Boolean, default: false },
