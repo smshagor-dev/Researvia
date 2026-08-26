@@ -1,1 +1,1 @@
-import { SupportAdminClient } from "@/components/admin/SupportAdminClient";export default function Page(){return <SupportAdminClient/>}
+import { SupportAdminClient } from "@/components/admin/SupportAdminClient";import { listAdminSupportTickets } from "@/server/productivity/admin-support.service";export default async function Page(){const initialItems=JSON.parse(JSON.stringify(await listAdminSupportTickets()));return <SupportAdminClient initialItems={initialItems}/>}
