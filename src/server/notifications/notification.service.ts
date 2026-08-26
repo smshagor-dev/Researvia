@@ -22,17 +22,19 @@ export async function notifyUser(input: {
     title: input.title,
     message: input.message,
     href: input.href ?? null,
-    dedupeKey: input.dedupeKey ?? null,
+    ...(input.dedupeKey ? { dedupeKey: input.dedupeKey } : {}),
     metadata: { ...(input.metadata ?? {}), webVisible: input.webVisible !== false }
   };
 
   if (!input.dedupeKey) return Notification.create(payload);
 
-  return Notification.findOneAndUpdate(
+  const notification = await Notification.findOneAndUpdate(
     { userId: input.userId, dedupeKey: input.dedupeKey },
     { $setOnInsert: payload },
     { upsert: true, returnDocument: "after", setDefaultsOnInsert: true }
   );
+  if (!notification) throw new AppError("NOTIFICATION_CREATE_FAILED", 500, "Notification could not be created.");
+  return notification;
 }
 
 export async function getNotificationById(id: string) {
