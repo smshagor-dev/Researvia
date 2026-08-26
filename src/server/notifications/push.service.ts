@@ -1,6 +1,6 @@
 import * as webpush from "web-push";
 import { getServerEnv } from "@/config/env";
-import { connectDatabase } from "@/server/db/mongoose";
+import { prepareNotificationDatabase } from "@/server/db/notification-indexes";
 import { AppError } from "@/server/errors/AppError";
 import { PushSubscription } from "@/server/models/PushSubscription";
 import { getNotificationById } from "@/server/notifications/notification.service";
@@ -26,12 +26,12 @@ function configureWebPush() {
 }
 
 export async function countUserPushSubscriptions(userId: string) {
-  await connectDatabase();
+  await prepareNotificationDatabase();
   return PushSubscription.countDocuments({ userId, enabled: true });
 }
 
 export async function upsertPushSubscription(userId: string, input: BrowserPushSubscriptionInput, userAgent = "") {
-  await connectDatabase();
+  await prepareNotificationDatabase();
   const existing = await PushSubscription.findOne({ endpoint: input.endpoint }).select({ userId: 1 }).lean();
   if (existing && String(existing.userId) !== userId) {
     throw new AppError("PUSH_SUBSCRIPTION_CONFLICT", 409, "This browser push subscription belongs to another signed-in account.");
@@ -60,7 +60,7 @@ export async function upsertPushSubscription(userId: string, input: BrowserPushS
 }
 
 export async function removePushSubscription(userId: string, endpoint: string) {
-  await connectDatabase();
+  await prepareNotificationDatabase();
   await PushSubscription.deleteOne({ userId, endpoint });
 }
 
@@ -76,7 +76,7 @@ export async function deliverNotificationPush(notificationId: string) {
     return { configured: true, delivered: 0, disabled: 0, failed: 0 };
   }
 
-  await connectDatabase();
+  await prepareNotificationDatabase();
   const subscriptions = await PushSubscription.find({ userId, enabled: true }).lean();
   if (subscriptions.length === 0) return { configured: true, delivered: 0, disabled: 0, failed: 0 };
 
