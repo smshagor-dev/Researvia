@@ -5,7 +5,21 @@ import { StudentDocument } from "@/server/models/StudentDocument";
 
 const MAX_BYTES = 10 * 1024 * 1024;
 const ALLOWED_TYPES = new Set(["application/pdf","application/msword","application/vnd.openxmlformats-officedocument.wordprocessingml.document","text/plain"]);
-const DOCUMENT_KINDS = ["CV", "TRANSCRIPT", "SOP", "PROPOSAL", "OTHER"] as const;
+const DOCUMENT_KINDS = [
+  "CV",
+  "TRANSCRIPT",
+  "DEGREE_CERTIFICATE",
+  "ENROLLMENT_CERTIFICATE",
+  "RECOMMENDATION_LETTER",
+  "MOTIVATION_LETTER",
+  "SOP",
+  "PROPOSAL",
+  "LANGUAGE_CERTIFICATE",
+  "COURSE_CERTIFICATE",
+  "PUBLICATION",
+  "PASSPORT",
+  "OTHER"
+] as const;
 type DocumentKind = (typeof DOCUMENT_KINDS)[number];
 function isDocumentKind(value: string): value is DocumentKind { return (DOCUMENT_KINDS as readonly string[]).includes(value); }
 function safeName(value: string) { return value.replace(/[\\/\0\r\n]+/g, "_").slice(0, 255) || "document"; }
