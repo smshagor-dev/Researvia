@@ -29,7 +29,9 @@ const schema = z.object({
   imapPort: z.number().int().min(1).max(65535).optional(),
   imapSecure: z.boolean().optional(),
   imapUsername: z.string().trim().max(320).optional(),
-  imapPassword: z.string().max(1024).optional()
+  imapPassword: z.string().max(1024).optional(),
+  imapSyncEnabled: z.boolean().optional(),
+  imapMailbox: z.string().trim().min(1).max(255).optional()
 }).strict().refine((value) => Object.keys(value).length > 0, "Provide at least one mailbox setting.");
 
 async function requireUser() {
@@ -43,10 +45,7 @@ export async function GET(request: Request) {
   try {
     const user = await requireUser();
     const [mailbox, settings] = await Promise.all([ensureSystemMailbox(user.id), getSystemMailSettings(user.id)]);
-    return apiSuccess({
-      mailbox: { address: mailbox.address, displayName: mailbox.displayName, status: mailbox.status },
-      settings
-    });
+    return apiSuccess({ mailbox: { address: mailbox.address, displayName: mailbox.displayName, status: mailbox.status }, settings });
   } catch (error) {
     return handleApiError(error, requestId);
   }
