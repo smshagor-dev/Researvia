@@ -26,6 +26,8 @@ export type SystemMailSettingsUpdate = {
   imapSecure?: boolean;
   imapUsername?: string;
   imapPassword?: string;
+  imapSyncEnabled?: boolean;
+  imapMailbox?: string;
 };
 
 export type SystemMailSettingsDto = {
@@ -47,6 +49,11 @@ export type SystemMailSettingsDto = {
   imapSecure: boolean;
   imapUsername: string;
   imapPasswordSaved: boolean;
+  imapSyncEnabled: boolean;
+  imapMailbox: string;
+  imapLastUid: number;
+  imapSyncStatus: "IDLE" | "RUNNING" | "ERROR";
+  imapLastImportedCount: number;
   lastSmtpTestAt: string | null;
   lastImapTestAt: string | null;
   lastImapSyncAt: string | null;
@@ -64,7 +71,12 @@ async function ensureRow(userId: string) {
   return row;
 }
 
+function asDate(value: unknown) {
+  return value ? new Date(value as Date).toISOString() : null;
+}
+
 function safeDto(row: Record<string, unknown>): SystemMailSettingsDto {
+  const syncStatus = row.imapSyncStatus === "RUNNING" || row.imapSyncStatus === "ERROR" ? row.imapSyncStatus : "IDLE";
   return {
     deliveryMode: row.deliveryMode === "CUSTOM" ? "CUSTOM" : "MANAGED",
     senderName: String(row.senderName ?? ""),
@@ -84,9 +96,14 @@ function safeDto(row: Record<string, unknown>): SystemMailSettingsDto {
     imapSecure: row.imapSecure !== false,
     imapUsername: String(row.imapUsername ?? ""),
     imapPasswordSaved: Boolean(row.imapPasswordEnc),
-    lastSmtpTestAt: row.lastSmtpTestAt ? new Date(row.lastSmtpTestAt as Date).toISOString() : null,
-    lastImapTestAt: row.lastImapTestAt ? new Date(row.lastImapTestAt as Date).toISOString() : null,
-    lastImapSyncAt: row.lastImapSyncAt ? new Date(row.lastImapSyncAt as Date).toISOString() : null,
+    imapSyncEnabled: Boolean(row.imapSyncEnabled),
+    imapMailbox: String(row.imapMailbox ?? "INBOX"),
+    imapLastUid: Number(row.imapLastUid ?? 0),
+    imapSyncStatus: syncStatus,
+    imapLastImportedCount: Number(row.imapLastImportedCount ?? 0),
+    lastSmtpTestAt: asDate(row.lastSmtpTestAt),
+    lastImapTestAt: asDate(row.lastImapTestAt),
+    lastImapSyncAt: asDate(row.lastImapSyncAt),
     lastConfigError: row.lastConfigError ? String(row.lastConfigError) : null
   };
 }
@@ -95,7 +112,16 @@ function validateAddress(value: string, field: string) {
   if (value && !ADDRESS_RE.test(value)) throw new AppError("MAIL_SETTINGS_INVALID", 400, `${field} must be a valid email address.`);
 }
 
+function validateMailbox(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed || trimmed.length > 255 || /[\0\r\n]/.test(trimmed)) {
+    throw new AppError("MAIL_SETTINGS_INVALID", 400, "IMAP mailbox name is invalid.");
+  }
+  return trimmed;
+}
+
 export async function getSystemMailSettings(userId: string): Promise<SystemMailSettingsDto> {
+  await prepareSystemMailboxDatabase();
   const row = await SystemMailSettings.findOne({ userId }).select("+smtpPasswordEnc +imapPasswordEnc").lean() ?? await ensureRow(userId);
   return safeDto(row as unknown as Record<string, unknown>);
 }
@@ -105,6 +131,7 @@ export async function updateSystemMailSettings(userId: string, input: SystemMail
   validateAddress(input.replyTo?.trim().toLowerCase() ?? "", "Reply-to");
   validateAddress(input.forwardingEmail?.trim().toLowerCase() ?? "", "Forwarding email");
 
+  const current = await SystemMailSettings.findOne({ userId }).select("+imapPasswordEnc").lean();
   const set: Record<string, unknown> = {};
   if (input.deliveryMode) set.deliveryMode = input.deliveryMode;
   if (typeof input.senderName === "string") set.senderName = input.senderName.trim().slice(0, 120);
@@ -119,11 +146,37 @@ export async function updateSystemMailSettings(userId: string, input: SystemMail
   if (typeof input.smtpSecure === "boolean") set.smtpSecure = input.smtpSecure;
   if (typeof input.smtpUsername === "string") set.smtpUsername = input.smtpUsername.trim();
   if (typeof input.smtpPassword === "string" && input.smtpPassword.length > 0) set.smtpPasswordEnc = encryptSecret(input.smtpPassword);
-  if (typeof input.imapHost === "string") set.imapHost = input.imapHost.trim();
+
+  const nextImapHost = typeof input.imapHost === "string" ? input.imapHost.trim() : String(current?.imapHost ?? "");
+  const nextImapUsername = typeof input.imapUsername === "string" ? input.imapUsername.trim() : String(current?.imapUsername ?? "");
+  const nextImapMailbox = typeof input.imapMailbox === "string" ? validateMailbox(input.imapMailbox) : String(current?.imapMailbox ?? "INBOX");
+  const imapIdentityChanged = Boolean(current) && (
+    nextImapHost !== String(current?.imapHost ?? "") ||
+    nextImapUsername !== String(current?.imapUsername ?? "") ||
+    nextImapMailbox !== String(current?.imapMailbox ?? "INBOX")
+  );
+  if (typeof input.imapHost === "string") set.imapHost = nextImapHost;
   if (typeof input.imapPort === "number") set.imapPort = input.imapPort;
   if (typeof input.imapSecure === "boolean") set.imapSecure = input.imapSecure;
-  if (typeof input.imapUsername === "string") set.imapUsername = input.imapUsername.trim();
+  if (typeof input.imapUsername === "string") set.imapUsername = nextImapUsername;
+  if (typeof input.imapMailbox === "string") set.imapMailbox = nextImapMailbox;
   if (typeof input.imapPassword === "string" && input.imapPassword.length > 0) set.imapPasswordEnc = encryptSecret(input.imapPassword);
+  if (typeof input.imapSyncEnabled === "boolean") {
+    if (input.imapSyncEnabled) {
+      const passwordSaved = Boolean(current?.imapPasswordEnc || (typeof input.imapPassword === "string" && input.imapPassword.length > 0));
+      if (!nextImapHost || !nextImapUsername || !passwordSaved) {
+        throw new AppError("MAIL_IMAP_NOT_CONFIGURED", 400, "Save an IMAP host, username, and password before enabling synchronization.");
+      }
+    }
+    set.imapSyncEnabled = input.imapSyncEnabled;
+  }
+  if (imapIdentityChanged) {
+    set.imapUidValidity = null;
+    set.imapLastUid = 0;
+    set.lastImapSyncAt = null;
+    set.imapLastImportedCount = 0;
+    set.imapSyncStatus = "IDLE";
+  }
   set.lastConfigError = null;
 
   await SystemMailSettings.findOneAndUpdate(
@@ -148,9 +201,7 @@ export async function getSystemMailDeliveryProfile(userId: string): Promise<{
   transport: SystemMailboxSmtpTransport | null;
 }> {
   const row = await secretRow(userId);
-  if (row.deliveryMode !== "CUSTOM") {
-    return { senderName: row.senderName || "", signature: row.signature || "", replyTo: row.replyTo || null, transport: null };
-  }
+  if (row.deliveryMode !== "CUSTOM") return { senderName: row.senderName || "", signature: row.signature || "", replyTo: row.replyTo || null, transport: null };
   if (!row.smtpHost || !row.smtpUsername || !row.smtpPasswordEnc) {
     throw new AppError("MAIL_SMTP_NOT_CONFIGURED", 400, "Complete and test your custom SMTP settings before sending.");
   }
@@ -158,13 +209,7 @@ export async function getSystemMailDeliveryProfile(userId: string): Promise<{
     senderName: row.senderName || "",
     signature: row.signature || "",
     replyTo: row.replyTo || null,
-    transport: {
-      host: row.smtpHost,
-      port: row.smtpPort,
-      secure: row.smtpSecure,
-      username: row.smtpUsername,
-      password: decryptSecret(row.smtpPasswordEnc)
-    }
+    transport: { host: row.smtpHost, port: row.smtpPort, secure: row.smtpSecure, username: row.smtpUsername, password: decryptSecret(row.smtpPasswordEnc) }
   };
 }
 
@@ -180,17 +225,9 @@ export async function getSystemMailInboundPreferences(userId: string) {
 
 export async function testSystemMailSmtp(userId: string) {
   const row = await secretRow(userId);
-  if (!row.smtpHost || !row.smtpUsername || !row.smtpPasswordEnc) {
-    throw new AppError("MAIL_SMTP_NOT_CONFIGURED", 400, "Enter SMTP host, username, and password first.");
-  }
+  if (!row.smtpHost || !row.smtpUsername || !row.smtpPasswordEnc) throw new AppError("MAIL_SMTP_NOT_CONFIGURED", 400, "Enter SMTP host, username, and password first.");
   try {
-    await verifySystemMailboxSmtpTransport({
-      host: row.smtpHost,
-      port: row.smtpPort,
-      secure: row.smtpSecure,
-      username: row.smtpUsername,
-      password: decryptSecret(row.smtpPasswordEnc)
-    });
+    await verifySystemMailboxSmtpTransport({ host: row.smtpHost, port: row.smtpPort, secure: row.smtpSecure, username: row.smtpUsername, password: decryptSecret(row.smtpPasswordEnc) });
     const now = new Date();
     await SystemMailSettings.updateOne({ _id: row._id }, { $set: { lastSmtpTestAt: now, lastConfigError: null } });
     return { ok: true, testedAt: now.toISOString() };
@@ -203,26 +240,18 @@ export async function testSystemMailSmtp(userId: string) {
 
 export async function testSystemMailImap(userId: string) {
   const row = await secretRow(userId);
-  if (!row.imapHost || !row.imapUsername || !row.imapPasswordEnc) {
-    throw new AppError("MAIL_IMAP_NOT_CONFIGURED", 400, "Enter IMAP host, username, and password first.");
-  }
-  const client = new ImapFlow({
-    host: row.imapHost,
-    port: row.imapPort,
-    secure: row.imapSecure,
-    auth: { user: row.imapUsername, pass: decryptSecret(row.imapPasswordEnc) },
-    logger: false
-  });
+  if (!row.imapHost || !row.imapUsername || !row.imapPasswordEnc) throw new AppError("MAIL_IMAP_NOT_CONFIGURED", 400, "Enter IMAP host, username, and password first.");
+  const client = new ImapFlow({ host: row.imapHost, port: row.imapPort, secure: row.imapSecure, auth: { user: row.imapUsername, pass: decryptSecret(row.imapPasswordEnc) }, logger: false });
   try {
     await client.connect();
-    await client.mailboxOpen("INBOX", { readOnly: true });
+    await client.mailboxOpen(row.imapMailbox || "INBOX", { readOnly: true });
     const now = new Date();
     await SystemMailSettings.updateOne({ _id: row._id }, { $set: { lastImapTestAt: now, lastConfigError: null } });
     return { ok: true, testedAt: now.toISOString() };
   } catch (error) {
     const message = error instanceof Error ? error.message.slice(0, 1000) : "IMAP connection failed.";
     await SystemMailSettings.updateOne({ _id: row._id }, { $set: { lastConfigError: message } });
-    throw new AppError("MAIL_IMAP_TEST_FAILED", 400, "IMAP connection failed. Check the server, port, encryption, username, and app password.");
+    throw new AppError("MAIL_IMAP_TEST_FAILED", 400, "IMAP connection failed. Check the server, port, encryption, username, mailbox, and app password.");
   } finally {
     try { await client.logout(); } catch { /* connection may have failed before login */ }
   }
