@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { Brand } from "@/components/brand/Brand";
 import { LogoutButton } from "@/components/auth/LogoutButton";
 import { DashboardNav } from "@/components/dashboard/DashboardNav";
+import { NotificationLiveBridge } from "@/components/notifications/NotificationLiveBridge";
 import type { SessionUser } from "@/server/auth/session";
 
 export function DashboardShell({
@@ -21,6 +22,7 @@ export function DashboardShell({
 
   return (
     <div className="min-h-svh bg-slate-50 text-slate-950">
+      <NotificationLiveBridge />
       <div className="mx-auto grid min-h-svh max-w-[1600px] lg:grid-cols-[260px_1fr]">
         <aside className="hidden border-r border-slate-200 bg-white px-5 py-6 lg:flex lg:flex-col">
           <Brand />
