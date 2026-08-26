@@ -2,6 +2,7 @@ import { type ProfilePatchInput } from "@/schemas/profile";
 import { prepareProfileDatabase } from "@/server/db/profile-indexes";
 import { AppError } from "@/server/errors/AppError";
 import { StudentProfile } from "@/server/models/StudentProfile";
+import { queueProfessorMatchEvaluation } from "@/server/profile/professor-match-notification.service";
 import type { StudentProfileDto } from "@/types/profile";
 
 function hasText(value: unknown): boolean {
@@ -77,6 +78,14 @@ function serializeProfile(profile: Record<string, unknown>): StudentProfileDto {
   };
 }
 
+async function queueMatchingSafely(userId: string, reason: string) {
+  try {
+    await queueProfessorMatchEvaluation(userId, reason);
+  } catch (error) {
+    console.error("Unable to queue professor match evaluation after profile change.", error);
+  }
+}
+
 export async function getStudentProfile(userId: string): Promise<StudentProfileDto> {
   await prepareProfileDatabase();
   const profile = await StudentProfile.findOneAndUpdate(
@@ -99,6 +108,7 @@ export async function updateStudentProfile(userId: string, input: ProfilePatchIn
   ).lean();
 
   if (!profile) throw new AppError("PROFILE_UPDATE_FAILED", 500, "Student profile could not be updated.");
+  await queueMatchingSafely(userId, "personal-profile-updated");
   return serializeProfile(profile as unknown as Record<string, unknown>);
 }
 
@@ -132,5 +142,6 @@ export async function completeStudentOnboarding(userId: string): Promise<Student
   ).lean();
 
   if (!completed) throw new AppError("PROFILE_UPDATE_FAILED", 500, "Student onboarding could not be completed.");
+  await queueMatchingSafely(userId, "onboarding-completed");
   return serializeProfile(completed as unknown as Record<string, unknown>);
 }
