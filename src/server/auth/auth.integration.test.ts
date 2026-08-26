@@ -24,13 +24,32 @@ import { RateLimitBucket } from "@/server/models/RateLimitBucket";
 import { User } from "@/server/models/User";
 import { UserSession } from "@/server/models/UserSession";
 
-const account = {
-  displayName: "Test Student",
-  email: "student@example.com",
-  password: "initial-password-123"
-};
+const fixturePrefix = "auth-lifecycle-";
+let fixtureCounter = 0;
 
-async function registerAndVerify(): Promise<void> {
+function nextAccount() {
+  fixtureCounter += 1;
+  return {
+    displayName: "Test Student",
+    email: `${fixturePrefix}${Date.now()}-${fixtureCounter}@example.com`,
+    password: "initial-password-123"
+  };
+}
+
+async function cleanupFixtures() {
+  const users = await User.find({ email: { $regex: `^${fixturePrefix}` } }).select("_id").lean();
+  const userIds = users.map((user) => user._id);
+  if (!userIds.length) return;
+  await Promise.all([
+    UserSession.deleteMany({ userId: { $in: userIds } }),
+    EmailVerificationToken.deleteMany({ userId: { $in: userIds } }),
+    PasswordResetToken.deleteMany({ userId: { $in: userIds } }),
+    RateLimitBucket.deleteMany({ key: { $regex: fixturePrefix } }),
+    User.deleteMany({ _id: { $in: userIds } })
+  ]);
+}
+
+async function registerAndVerify(account: ReturnType<typeof nextAccount>): Promise<void> {
   await registerStudent(account);
   const token = vi.mocked(sendVerificationEmail).mock.calls.at(-1)?.[2];
   expect(token).toBeTruthy();
@@ -43,25 +62,21 @@ beforeAll(async () => {
   process.env.SESSION_SECRET ||= "test-session-secret-value-at-least-32-characters";
   process.env.TOKEN_ENCRYPTION_KEY ||= "test-token-encryption-key-at-least-32-characters";
   await connectDatabase();
+  await cleanupFixtures();
 });
 
-beforeEach(async () => {
+beforeEach(() => {
   vi.clearAllMocks();
-  await Promise.all([
-    User.deleteMany({}),
-    UserSession.deleteMany({}),
-    EmailVerificationToken.deleteMany({}),
-    PasswordResetToken.deleteMany({}),
-    RateLimitBucket.deleteMany({})
-  ]);
 });
 
 afterAll(async () => {
+  await cleanupFixtures();
   await disconnectDatabase();
 });
 
 describe("authentication lifecycle", () => {
   it("registers, requires verification, verifies once, and creates a session", async () => {
+    const account = nextAccount();
     await registerStudent(account);
 
     const verificationCall = vi.mocked(sendVerificationEmail).mock.calls[0];
@@ -69,7 +84,9 @@ describe("authentication lifecycle", () => {
     const token = verificationCall?.[2];
     expect(token).toBeTruthy();
 
-    const stored = await EmailVerificationToken.findOne({}).select("+tokenHash").lean();
+    const user = await User.findOne({ email: account.email }).select("_id").lean();
+    expect(user?._id).toBeTruthy();
+    const stored = await EmailVerificationToken.findOne({ userId: user?._id }).select("+tokenHash").lean();
     expect(stored?.tokenHash).toBeTruthy();
     expect(stored?.tokenHash).not.toBe(token);
 
@@ -91,11 +108,14 @@ describe("authentication lifecycle", () => {
     expect(session.requiresTwoFactor).toBe(false);
     if (session.requiresTwoFactor) throw new Error("Unexpected two-factor challenge for account without 2FA.");
     expect(session.token.length).toBeGreaterThan(32);
-    expect(await UserSession.countDocuments({ revokedAt: null })).toBe(1);
+    expect(await UserSession.countDocuments({ userId: user?._id, revokedAt: null })).toBe(1);
   });
 
   it("resets the password, consumes the token, and revokes existing sessions", async () => {
-    await registerAndVerify();
+    const account = nextAccount();
+    await registerAndVerify(account);
+    const user = await User.findOne({ email: account.email }).select("_id").lean();
+    expect(user?._id).toBeTruthy();
 
     await loginStudent(
       { email: account.email, password: account.password, rememberMe: true },
@@ -108,7 +128,7 @@ describe("authentication lifecycle", () => {
 
     await resetPassword({ token: resetToken as string, password: "replacement-password-456" });
 
-    expect(await UserSession.countDocuments({ revokedAt: null })).toBe(0);
+    expect(await UserSession.countDocuments({ userId: user?._id, revokedAt: null })).toBe(0);
     await expect(
       loginStudent(
         { email: account.email, password: account.password, rememberMe: false },
