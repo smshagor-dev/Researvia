@@ -58,8 +58,10 @@ describe("system mailbox", () => {
 
   afterAll(async () => {
     if (fixtureIds.length) {
+      const notifications = await Notification.find({ userId: { $in: fixtureIds } }).select({ _id: 1 }).lean();
+      const notificationIds = notifications.map((item) => item._id.toString());
       await Promise.all([
-        Job.deleteMany({ "payload.notificationId": { $exists: true } }),
+        notificationIds.length ? Job.deleteMany({ "payload.notificationId": { $in: notificationIds } }) : Promise.resolve(),
         Notification.deleteMany({ userId: { $in: fixtureIds } }),
         SystemMailMessage.deleteMany({ userId: { $in: fixtureIds } }),
         SystemMailbox.deleteMany({ userId: { $in: fixtureIds } }),
