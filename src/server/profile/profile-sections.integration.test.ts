@@ -12,6 +12,8 @@ import {
 
 let userId = "";
 let otherUserId = "";
+let fixtureCounter = 0;
+const fixtureUserIds: string[] = [];
 
 beforeAll(async () => {
   process.env.MONGODB_URI ||= "mongodb://127.0.0.1:27017/researvia_profile_sections_ci";
@@ -22,25 +24,29 @@ beforeAll(async () => {
 });
 
 beforeEach(async () => {
-  await Promise.all([
-    User.deleteMany({}),
-    StudentProfile.deleteMany({}),
-    StudentEducation.deleteMany({}),
-    StudentResearchProfile.deleteMany({}),
-    StudentSkill.deleteMany({})
-  ]);
+  fixtureCounter += 1;
   const users = await User.create([
-    { email: "sections-student@example.com", displayName: "Sections Student", role: "STUDENT", status: "ACTIVE", emailVerifiedAt: new Date() },
-    { email: "sections-other@example.com", displayName: "Other Student", role: "STUDENT", status: "ACTIVE", emailVerifiedAt: new Date() }
+    { email: `sections-student-${fixtureCounter}@example.com`, displayName: "Sections Student", role: "STUDENT", status: "ACTIVE", emailVerifiedAt: new Date() },
+    { email: `sections-other-${fixtureCounter}@example.com`, displayName: "Other Student", role: "STUDENT", status: "ACTIVE", emailVerifiedAt: new Date() }
   ]);
   const user = users[0];
   const otherUser = users[1];
   if (!user || !otherUser) throw new Error("Profile section test users were not created.");
   userId = user._id.toString();
   otherUserId = otherUser._id.toString();
+  fixtureUserIds.push(userId, otherUserId);
 });
 
 afterAll(async () => {
+  if (fixtureUserIds.length > 0) {
+    await Promise.all([
+      User.deleteMany({ _id: { $in: fixtureUserIds } }),
+      StudentProfile.deleteMany({ userId: { $in: fixtureUserIds } }),
+      StudentEducation.deleteMany({ userId: { $in: fixtureUserIds } }),
+      StudentResearchProfile.deleteMany({ userId: { $in: fixtureUserIds } }),
+      StudentSkill.deleteMany({ userId: { $in: fixtureUserIds } })
+    ]);
+  }
   await disconnectDatabase();
 });
 
