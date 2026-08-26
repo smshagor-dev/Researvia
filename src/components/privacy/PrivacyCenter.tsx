@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useState, type FormEvent } from "react";
 
 type Preferences = { aiProcessingAllowed: boolean; recommendationPersonalization: boolean; analyticsAllowed: boolean; emailSyncAllowed: boolean };
@@ -14,6 +16,7 @@ async function jsonRequest(url: string, init?: RequestInit) {
 }
 
 export function PrivacyCenter() {
+  const router = useRouter();
   const [preferences, setPreferences] = useState<Preferences>(defaults);
   const [sessions, setSessions] = useState<Session[]>([]);
   const [status, setStatus] = useState("");
@@ -28,7 +31,20 @@ export function PrivacyCenter() {
     } catch (error) { setStatus(error instanceof Error ? error.message : "Could not load privacy controls."); }
   }
 
-  useEffect(() => { void refresh(); }, []);
+  useEffect(() => {
+    let active = true;
+    void Promise.all([jsonRequest("/api/v1/me/privacy"), jsonRequest("/api/v1/me/security/sessions")])
+      .then(([privacyData, sessionData]) => {
+        if (!active) return;
+        const p = privacyData.preferences as Partial<Preferences>;
+        setPreferences({ ...defaults, ...p });
+        setSessions(sessionData.sessions as Session[]);
+      })
+      .catch((error: unknown) => {
+        if (active) setStatus(error instanceof Error ? error.message : "Could not load privacy controls.");
+      });
+    return () => { active = false; };
+  }, []);
 
   async function savePreferences() {
     setBusy(true); setStatus("");
@@ -63,7 +79,8 @@ export function PrivacyCenter() {
     setBusy(true); setStatus("");
     try {
       await jsonRequest("/api/v1/me/privacy/delete-account", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ password, confirmation }) });
-      window.location.assign("/");
+      router.replace("/");
+      router.refresh();
     } catch (error) { setStatus(error instanceof Error ? error.message : "Account deletion failed."); setBusy(false); }
   }
 
@@ -79,7 +96,7 @@ export function PrivacyCenter() {
 
     <section className="rounded-xl border bg-white p-5 shadow-sm"><div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-lg font-semibold">Devices & sessions</h2><p className="mt-1 text-sm text-slate-600">Review active opaque-cookie sessions. Session tokens and token hashes are never displayed.</p></div><button disabled={busy || sessions.length < 2} onClick={revokeOthers} className="rounded-md border px-3 py-2 text-sm font-medium disabled:opacity-50">Sign out other devices</button></div><div className="mt-4 space-y-3">{sessions.map((session) => <article key={session.id} className="rounded-lg border p-4"><div className="flex flex-wrap items-start justify-between gap-3"><div><div className="flex items-center gap-2"><p className="text-sm font-medium">{session.isCurrent ? "Current session" : "Active session"}</p>{session.isCurrent ? <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">Current</span> : null}</div><p className="mt-1 max-w-3xl break-words text-xs text-slate-500">{session.userAgent || "Unknown device"}</p><p className="mt-2 text-xs text-slate-500">IP {session.ipAddress || "Unknown"} · Last active {new Date(session.lastSeenAt).toLocaleString()} · Expires {new Date(session.expiresAt).toLocaleString()}</p></div>{!session.isCurrent ? <button disabled={busy} onClick={() => revokeSession(session.id)} className="rounded-md border px-3 py-1.5 text-xs font-medium text-red-700">Revoke</button> : null}</div></article>)}{sessions.length === 0 ? <p className="text-sm text-slate-600">No active sessions were returned.</p> : null}</div></section>
 
-    <section className="rounded-xl border bg-white p-5 shadow-sm"><h2 className="text-lg font-semibold">Your data</h2><p className="mt-1 text-sm text-slate-600">Export account-scoped data as JSON. Private uploaded file bytes are not embedded in the export.</p><a href="/api/v1/me/privacy/export" className="mt-4 inline-block rounded-md border px-4 py-2 text-sm font-medium">Download data export</a></section>
+    <section className="rounded-xl border bg-white p-5 shadow-sm"><h2 className="text-lg font-semibold">Your data</h2><p className="mt-1 text-sm text-slate-600">Export account-scoped data as JSON. Private uploaded file bytes are not embedded in the export.</p><Link href="/api/v1/me/privacy/export" prefetch={false} className="mt-4 inline-block rounded-md border px-4 py-2 text-sm font-medium">Download data export</Link></section>
 
     <section className="rounded-xl border border-red-200 bg-red-50/40 p-5"><h2 className="text-lg font-semibold text-red-950">Delete account</h2><p className="mt-1 text-sm text-red-800">This permanently removes student workspace data and revokes sessions. Stored document binaries are queued for durable GridFS cleanup.</p><form onSubmit={deleteAccount} className="mt-4 grid gap-3 max-w-xl"><label className="text-sm font-medium text-red-950">Current password<input required name="password" type="password" autoComplete="current-password" className="mt-1 block w-full rounded-md border bg-white px-3 py-2 text-slate-950"/></label><label className="text-sm font-medium text-red-950">Type DELETE MY ACCOUNT<input required name="confirmation" autoComplete="off" className="mt-1 block w-full rounded-md border bg-white px-3 py-2 text-slate-950"/></label><button disabled={busy} className="w-fit rounded-md bg-red-700 px-4 py-2 text-sm font-medium text-white disabled:opacity-50">Permanently delete account</button></form></section>
     {status ? <p role="status" className="rounded-lg border bg-slate-50 px-4 py-3 text-sm text-slate-700">{status}</p> : null}
