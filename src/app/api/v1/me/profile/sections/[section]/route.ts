@@ -5,6 +5,7 @@ import { getProfileSectionSchema, profileSectionKeySchema } from "@/schemas/stud
 import { assertSameOrigin } from "@/server/auth/request";
 import { getCurrentUser } from "@/server/auth/session";
 import { AppError } from "@/server/errors/AppError";
+import { queueProfessorMatchEvaluation } from "@/server/profile/professor-match-notification.service";
 import { createOrReplaceStudentProfileSection, getStudentProfileSection } from "@/server/profile/profile-sections.service";
 import { enforceRateLimit } from "@/server/security/rate-limit";
 
@@ -21,6 +22,14 @@ async function requireStudent() {
 
 async function sectionFrom(context: Context) {
   return profileSectionKeySchema.parse((await context.params).section);
+}
+
+async function queueMatching(userId: string, section: string) {
+  try {
+    await queueProfessorMatchEvaluation(userId, `profile-section:${section}`);
+  } catch (error) {
+    console.error("Unable to queue professor match evaluation after profile section save.", error);
+  }
 }
 
 export async function GET(request: NextRequest, context: Context) {
@@ -42,7 +51,9 @@ export async function POST(request: NextRequest, context: Context) {
     const section = await sectionFrom(context);
     await enforceRateLimit("profile:section", user.id, 240, 60 * 60 * 1000);
     const input = await readJson(request, getProfileSectionSchema(section));
-    return apiSuccess({ section, item: await createOrReplaceStudentProfileSection(user.id, section, input) }, 201);
+    const item = await createOrReplaceStudentProfileSection(user.id, section, input);
+    await queueMatching(user.id, section);
+    return apiSuccess({ section, item }, 201);
   } catch (error) {
     return handleApiError(error, requestId);
   }

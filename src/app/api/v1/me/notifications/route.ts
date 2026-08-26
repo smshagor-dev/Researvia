@@ -17,7 +17,16 @@ async function requireUser() {
 
 export async function GET(request: Request) {
   const requestId = getRequestId(request);
-  try { const user = await requireUser(); return apiSuccess(await listNotifications(user.id)); } catch (error) { return handleApiError(error, requestId); }
+  try {
+    const user = await requireUser();
+    const url = new URL(request.url);
+    const limitRaw = Number(url.searchParams.get("limit") ?? "50");
+    const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(Math.trunc(limitRaw), 1), 100) : 50;
+    const unreadOnly = url.searchParams.get("unreadOnly") === "true";
+    return apiSuccess(await listNotifications(user.id, limit, unreadOnly));
+  } catch (error) {
+    return handleApiError(error, requestId);
+  }
 }
 
 export async function PATCH(request: Request) {

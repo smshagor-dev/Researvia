@@ -3,12 +3,16 @@ import { Professor } from "@/server/models/Professor";
 import { StudentProfile } from "@/server/models/StudentProfile";
 import { StudentPublication } from "@/server/models/StudentPublication";
 import {
+  StudentCertification,
+  StudentCollaborationPreference,
   StudentEducation,
   StudentOpportunityPreference,
+  StudentProject,
   StudentResearchExperience,
   StudentResearchProfile,
   StudentSkill,
-  StudentSummary
+  StudentSummary,
+  StudentWorkExperience
 } from "@/server/models/StudentProfileSections";
 
 const STOP_WORDS = new Set(["and", "the", "for", "with", "from", "into", "using", "research", "science", "engineering", "of", "in", "on", "a", "an", "to"]);
@@ -55,14 +59,31 @@ export type ProfessorProfileMatch = {
 
 export async function findProfessorMatches(userId: string, limit = 8) {
   await prepareDiscoveryDatabase();
-  const [legacyProfile, researchProfile, skills, education, publications, researchExperience, preferences, summary] = await Promise.all([
+  const [
+    legacyProfile,
+    researchProfile,
+    skills,
+    education,
+    publications,
+    researchExperience,
+    projects,
+    workExperience,
+    certifications,
+    preferences,
+    collaboration,
+    summary
+  ] = await Promise.all([
     StudentProfile.findOne({ userId }).lean(),
     StudentResearchProfile.findOne({ userId }).lean(),
     StudentSkill.find({ userId }).lean(),
     StudentEducation.find({ userId }).sort({ endDate: -1, startDate: -1 }).lean(),
     StudentPublication.find({ userId }).sort({ publicationDate: -1 }).limit(30).lean(),
     StudentResearchExperience.find({ userId }).sort({ startDate: -1 }).limit(20).lean(),
+    StudentProject.find({ userId }).sort({ startDate: -1 }).limit(30).lean(),
+    StudentWorkExperience.find({ userId }).sort({ startDate: -1 }).limit(20).lean(),
+    StudentCertification.find({ userId }).sort({ issueDate: -1 }).limit(30).lean(),
     StudentOpportunityPreference.findOne({ userId }).lean(),
+    StudentCollaborationPreference.findOne({ userId }).lean(),
     StudentSummary.findOne({ userId }).lean()
   ]);
 
@@ -71,15 +92,24 @@ export async function findProfessorMatches(userId: string, limit = 8) {
     ...array(researchProfile?.secondaryAreas),
     ...array(researchProfile?.preferredDomains),
     ...array(preferences?.preferredResearchAreas),
+    ...array(collaboration?.preferredResearchAreas),
     ...array(legacyProfile?.researchInterests),
     ...array(legacyProfile?.preferredResearchAreas),
-    ...researchExperience.flatMap((item) => [item.researchArea, ...array(item.methodology), ...array(item.tools)])
+    ...researchExperience.flatMap((item) => [item.researchArea, ...array(item.methodology), ...array(item.outcomes)]),
+    ...projects.flatMap((item) => [item.name, ...array(item.researchAreas)])
   ]);
-  const keywordTerms = terms(array(researchProfile?.keywords));
+  const keywordTerms = terms([
+    ...array(researchProfile?.keywords),
+    ...projects.flatMap((item) => [item.name, item.description])
+  ]);
   const skillTerms = terms([
     ...skills.map((item) => item.name),
     ...array(researchProfile?.researchMethods),
-    ...array(legacyProfile?.skills)
+    ...array(legacyProfile?.skills),
+    ...researchExperience.flatMap((item) => [...array(item.methodology), ...array(item.tools)]),
+    ...projects.flatMap((item) => array(item.technologies)),
+    ...workExperience.flatMap((item) => array(item.technologies)),
+    ...certifications.flatMap((item) => array(item.skills))
   ]);
   const publicationTerms = terms(publications.flatMap((item) => [item.title, item.venue, item.abstract]));
   const academicTerms = terms([
@@ -88,7 +118,13 @@ export async function findProfessorMatches(userId: string, limit = 8) {
     legacyProfile?.fieldOfStudy,
     legacyProfile?.currentUniversity
   ]);
-  const objectiveTerms = terms([researchProfile?.researchObjective, summary?.researchObjective, summary?.careerObjective, legacyProfile?.bio]);
+  const objectiveTerms = terms([
+    researchProfile?.researchObjective,
+    summary?.researchObjective,
+    summary?.careerObjective,
+    summary?.professionalSummary,
+    legacyProfile?.bio
+  ]);
   const preferredCountries = new Set([
     ...array(preferences?.preferredCountries),
     ...array(legacyProfile?.targetCountries)
@@ -151,9 +187,9 @@ export async function findProfessorMatches(userId: string, limit = 8) {
       matchScore: Math.round(total),
       matchReasons: [
         reason("Research interests align", research),
-        reason("Strong keyword overlap", keywords),
+        reason("Strong keyword and project overlap", keywords),
         reason("Publication topics align", publicationsScore),
-        reason("Methods and skills align", skillsScore),
+        reason("Methods, tools and skills align", skillsScore),
         reason("Academic background aligns", academic),
         reason("Research objective aligns", objective),
         country ? "Preferred country" : null

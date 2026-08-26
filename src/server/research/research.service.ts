@@ -4,6 +4,7 @@ import { Paper } from "@/server/models/Paper";
 import { ReadingItem } from "@/server/models/ReadingItem";
 import { ResearchLab } from "@/server/models/ResearchLab";
 import { StudentPublication } from "@/server/models/StudentPublication";
+import { queueProfessorMatchEvaluation } from "@/server/profile/professor-match-notification.service";
 
 const limitValue = (value?: number) => Math.max(1, Math.min(value ?? 20, 50));
 const safeRegex = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -40,5 +41,14 @@ export async function updateReading(userId: string, id: string, input: { status?
   const item = await ReadingItem.findOneAndUpdate({ _id: id, userId }, { $set: input }, { new: true, runValidators: true }).lean(); if (!item) throw new AppError("READING_ITEM_NOT_FOUND",404,"Reading item not found."); return item;
 }
 export async function deleteReading(userId: string, id: string) { await connectDatabase(); const result=await ReadingItem.deleteOne({ _id:id,userId }); if(!result.deletedCount)throw new AppError("READING_ITEM_NOT_FOUND",404,"Reading item not found."); }
-export async function listStudentPublications(userId: string){await connectDatabase();return StudentPublication.find({userId}).sort({publicationDate:-1}).lean();}
-export async function addStudentPublication(userId:string,input:{title:string;doi?:string;authors?:string[];venue?:string;publicationDate?:Date|null;url?:string}){await connectDatabase();if(input.doi){const existing=await StudentPublication.findOne({userId,doi:input.doi.trim().toLowerCase()}).lean();if(existing)return existing;}return StudentPublication.create({userId,...input,source:"MANUAL",verified:false});}
+export async function listStudentPublications(userId: string) { await connectDatabase(); return StudentPublication.find({ userId }).sort({ publicationDate: -1 }).lean(); }
+export async function addStudentPublication(userId: string, input: { title: string; doi?: string; authors?: string[]; venue?: string; publicationDate?: Date|null; url?: string }) {
+  await connectDatabase();
+  if (input.doi) {
+    const existing = await StudentPublication.findOne({ userId, doi: input.doi.trim().toLowerCase() }).lean();
+    if (existing) return existing;
+  }
+  const created = await StudentPublication.create({ userId, ...input, source: "MANUAL", verified: false });
+  try { await queueProfessorMatchEvaluation(userId, "publication-added"); } catch (error) { console.error("Unable to queue professor matching after publication addition.", error); }
+  return created;
+}

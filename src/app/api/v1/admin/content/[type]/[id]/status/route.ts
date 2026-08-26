@@ -8,6 +8,7 @@ import { Opportunity } from "@/server/models/Opportunity";
 import { Professor } from "@/server/models/Professor";
 import { Scholarship } from "@/server/models/Scholarship";
 import { University } from "@/server/models/University";
+import { queueProfessorMatchScan } from "@/server/profile/professor-match-notification.service";
 
 export const runtime = "nodejs";
 const schema = z.object({ status: z.enum(["DRAFT", "PUBLISHED", "ARCHIVED"]) });
@@ -30,6 +31,15 @@ export async function PATCH(request: Request, context: { params: Promise<{ type:
     const result = await updateContentStatus(type, id, input.status);
     if (result.matchedCount !== 1) throw new AppError("CONTENT_NOT_FOUND", 404, "Content record not found.");
     await writeAudit({ actorUserId: admin.id, action: "ADMIN_CONTENT_STATUS_CHANGED", targetType: type, targetId: id, metadata: { status: input.status } });
+
+    if (type === "professor" && input.status === "PUBLISHED") {
+      try {
+        await queueProfessorMatchScan(`professor-published:${id}`);
+      } catch (error) {
+        console.error("Unable to queue professor match scan after professor publish.", error);
+      }
+    }
+
     return apiSuccess({ status: input.status });
   } catch (error) { return handleApiError(error, requestId); }
 }
