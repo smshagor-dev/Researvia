@@ -29,11 +29,26 @@ export function calculateProfileCompletion(profile: Record<string, unknown>): nu
   return Math.round((checks.filter(Boolean).length / checks.length) * 100);
 }
 
+function isoDate(value: unknown): string | null {
+  if (!value) return null;
+  const date = new Date(value as string | number | Date);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
 function serializeProfile(profile: Record<string, unknown>): StudentProfileDto {
+  const photoUpdatedAt = isoDate(profile.photoUpdatedAt);
   return {
     id: String(profile._id),
     userId: String(profile.userId),
+    fullName: String(profile.fullName ?? ""),
+    headline: String(profile.headline ?? ""),
+    phone: String(profile.phone ?? ""),
+    dateOfBirth: isoDate(profile.dateOfBirth),
+    gender: String(profile.gender ?? "") as StudentProfileDto["gender"],
+    nationality: String(profile.nationality ?? ""),
     country: String(profile.country ?? ""),
+    city: String(profile.city ?? ""),
+    photoUrl: profile.photoFileId ? `/api/v1/me/profile/photo${photoUpdatedAt ? `?v=${encodeURIComponent(photoUpdatedAt)}` : ""}` : null,
     currentUniversity: String(profile.currentUniversity ?? ""),
     currentDegree: profile.currentDegree ? (String(profile.currentDegree) as StudentProfileDto["currentDegree"]) : null,
     fieldOfStudy: String(profile.fieldOfStudy ?? ""),
@@ -54,11 +69,10 @@ function serializeProfile(profile: Record<string, unknown>): StudentProfileDto {
     github: String(profile.github ?? ""),
     googleScholar: String(profile.googleScholar ?? ""),
     orcid: String(profile.orcid ?? ""),
+    researchGate: String(profile.researchGate ?? ""),
     profileVisibility: String(profile.profileVisibility ?? "RECOMMENDATION_ONLY") as StudentProfileDto["profileVisibility"],
     onboardingStep: typeof profile.onboardingStep === "number" ? profile.onboardingStep : 1,
-    onboardingCompletedAt: profile.onboardingCompletedAt
-      ? new Date(profile.onboardingCompletedAt as string | number | Date).toISOString()
-      : null,
+    onboardingCompletedAt: isoDate(profile.onboardingCompletedAt),
     completion: calculateProfileCompletion(profile)
   };
 }
@@ -77,9 +91,10 @@ export async function getStudentProfile(userId: string): Promise<StudentProfileD
 
 export async function updateStudentProfile(userId: string, input: ProfilePatchInput): Promise<StudentProfileDto> {
   await prepareProfileDatabase();
+  const normalized = { ...input, dateOfBirth: input.dateOfBirth === "" ? null : input.dateOfBirth };
   const profile = await StudentProfile.findOneAndUpdate(
     { userId },
-    { $set: input, $setOnInsert: { userId } },
+    { $set: normalized, $setOnInsert: { userId } },
     { upsert: true, new: true, runValidators: true, setDefaultsOnInsert: true }
   ).lean();
 
