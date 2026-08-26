@@ -1,0 +1,88 @@
+"use client";
+
+import { useState, type FormEvent } from "react";
+
+type WatchlistItem = {
+  id: string;
+  name: string;
+  targetType: "SCHOLARSHIP" | "OPPORTUNITY" | "PROFESSOR" | "LAB" | "DEADLINE_CHANGE";
+  query: string;
+  countries: string[];
+  researchTopics: string[];
+  fundingTypes: string[];
+  enabled: boolean;
+  lastEvaluatedAt: string | null;
+  lastMatchedAt: string | null;
+};
+
+async function api(url: string, init?: RequestInit) {
+  const response = await fetch(url, { ...init, headers: { "content-type": "application/json", ...(init?.headers ?? {}) } });
+  const body = await response.json();
+  if (!response.ok) throw new Error(body?.error?.message ?? "Request failed.");
+  return body.data;
+}
+
+const csv = (value: FormDataEntryValue | null) => String(value ?? "").split(",").map((item) => item.trim()).filter(Boolean);
+const normalize = (item: Record<string, unknown>): WatchlistItem => ({
+  id: String(item._id ?? item.id ?? ""),
+  name: String(item.name ?? ""),
+  targetType: String(item.targetType ?? "SCHOLARSHIP") as WatchlistItem["targetType"],
+  query: String(item.query ?? ""),
+  countries: Array.isArray(item.countries) ? item.countries.map(String) : [],
+  researchTopics: Array.isArray(item.researchTopics) ? item.researchTopics.map(String) : [],
+  fundingTypes: Array.isArray(item.fundingTypes) ? item.fundingTypes.map(String) : [],
+  enabled: item.enabled !== false,
+  lastEvaluatedAt: item.lastEvaluatedAt ? String(item.lastEvaluatedAt) : null,
+  lastMatchedAt: item.lastMatchedAt ? String(item.lastMatchedAt) : null
+});
+
+export function WatchlistManager({ initialItems }: { initialItems: WatchlistItem[] }) {
+  const [items, setItems] = useState(initialItems);
+  const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState("");
+
+  async function create(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const data = new FormData(form);
+    setBusy(true); setStatus("");
+    try {
+      const targetType = String(data.get("targetType")) as WatchlistItem["targetType"];
+      const result = await api("/api/v1/me/watchlists", { method: "POST", body: JSON.stringify({ name: String(data.get("name") ?? ""), targetType, query: String(data.get("query") ?? ""), countries: csv(data.get("countries")), researchTopics: csv(data.get("researchTopics")), fundingTypes: targetType === "SCHOLARSHIP" ? csv(data.get("fundingTypes")) : [], professorId: null, enabled: true }) });
+      setItems((value) => [normalize(result.item as Record<string, unknown>), ...value]);
+      form.reset(); setStatus("Watchlist created. The worker will evaluate it on the next hourly cycle.");
+    } catch (error) { setStatus(error instanceof Error ? error.message : "Could not create watchlist."); }
+    finally { setBusy(false); }
+  }
+
+  async function toggle(item: WatchlistItem) {
+    setBusy(true); setStatus("");
+    try {
+      const result = await api(`/api/v1/me/watchlists/${encodeURIComponent(item.id)}`, { method: "PATCH", body: JSON.stringify({ enabled: !item.enabled }) });
+      const updated = normalize(result.item as Record<string, unknown>);
+      setItems((value) => value.map((entry) => entry.id === item.id ? updated : entry));
+      setStatus(updated.enabled ? "Watchlist enabled." : "Watchlist paused.");
+    } catch (error) { setStatus(error instanceof Error ? error.message : "Could not update watchlist."); }
+    finally { setBusy(false); }
+  }
+
+  async function remove(id: string) {
+    setBusy(true); setStatus("");
+    try { await api(`/api/v1/me/watchlists/${encodeURIComponent(id)}`, { method: "DELETE" }); setItems((value) => value.filter((entry) => entry.id !== id)); setStatus("Watchlist deleted."); }
+    catch (error) { setStatus(error instanceof Error ? error.message : "Could not delete watchlist."); }
+    finally { setBusy(false); }
+  }
+
+  return <div className="space-y-6">
+    <form onSubmit={create} className="grid gap-4 rounded-xl border bg-white p-5 shadow-sm">
+      <div><h2 className="text-lg font-semibold">Create a watchlist</h2><p className="mt-1 text-sm text-slate-600">Track new published academic records or verified deadline changes. Filters are evaluated by the durable background worker.</p></div>
+      <div className="grid gap-3 md:grid-cols-2"><label className="text-sm font-medium">Name<input required name="name" maxLength={160} placeholder="Funded AI PhD in Germany" className="mt-1 block w-full rounded-md border px-3 py-2"/></label><label className="text-sm font-medium">Watch type<select name="targetType" className="mt-1 block w-full rounded-md border px-3 py-2"><option value="SCHOLARSHIP">Scholarships</option><option value="OPPORTUNITY">Opportunities</option><option value="PROFESSOR">Professors</option><option value="LAB">Research labs</option><option value="DEADLINE_CHANGE">Deadline changes</option></select></label></div>
+      <label className="text-sm font-medium">Keywords<input name="query" maxLength={500} placeholder="computer vision, robotics, autonomous systems" className="mt-1 block w-full rounded-md border px-3 py-2"/></label>
+      <div className="grid gap-3 md:grid-cols-3"><label className="text-sm font-medium">Countries <span className="font-normal text-slate-500">(comma separated)</span><input name="countries" placeholder="Germany, Sweden" className="mt-1 block w-full rounded-md border px-3 py-2"/></label><label className="text-sm font-medium">Research topics<input name="researchTopics" placeholder="AI, Computer Vision" className="mt-1 block w-full rounded-md border px-3 py-2"/></label><label className="text-sm font-medium">Funding types <span className="font-normal text-slate-500">(scholarships)</span><input name="fundingTypes" placeholder="FULL, PARTIAL" className="mt-1 block w-full rounded-md border px-3 py-2"/></label></div>
+      <button disabled={busy} className="w-fit rounded-md bg-slate-950 px-4 py-2 text-sm font-medium text-white disabled:opacity-50">Create watchlist</button>
+    </form>
+
+    <section className="space-y-3"><div><h2 className="text-lg font-semibold">Your watchlists</h2><p className="text-sm text-slate-600">Notifications contain only published matches or recorded deadline-change events.</p></div>{items.map((item) => <article key={item.id} className="rounded-xl border bg-white p-5 shadow-sm"><div className="flex flex-wrap items-start justify-between gap-4"><div><div className="flex flex-wrap items-center gap-2"><h3 className="font-semibold">{item.name}</h3><span className={`rounded-full px-2 py-0.5 text-xs font-medium ${item.enabled ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-600"}`}>{item.enabled ? "Active" : "Paused"}</span></div><p className="mt-1 text-xs font-medium text-slate-500">{item.targetType.replaceAll("_", " ")}</p>{item.query ? <p className="mt-3 text-sm text-slate-700">Keywords: {item.query}</p> : null}<p className="mt-2 text-xs text-slate-500">{item.countries.length ? `Countries: ${item.countries.join(", ")} · ` : ""}{item.researchTopics.length ? `Topics: ${item.researchTopics.join(", ")}` : ""}</p><p className="mt-3 text-xs text-slate-500">Last evaluated: {item.lastEvaluatedAt ? new Date(item.lastEvaluatedAt).toLocaleString() : "Not yet"}{item.lastMatchedAt ? ` · Last match: ${new Date(item.lastMatchedAt).toLocaleString()}` : ""}</p></div><div className="flex gap-2"><button disabled={busy} onClick={() => toggle(item)} className="rounded-md border px-3 py-1.5 text-xs font-medium">{item.enabled ? "Pause" : "Enable"}</button><button disabled={busy} onClick={() => remove(item.id)} className="rounded-md border px-3 py-1.5 text-xs font-medium text-red-700">Delete</button></div></div></article>)}{items.length === 0 ? <div className="rounded-xl border border-dashed bg-slate-50 p-8 text-center text-sm text-slate-600">No watchlists yet. Create one to receive targeted academic alerts.</div> : null}</section>
+    {status ? <p role="status" className="rounded-lg border bg-slate-50 px-4 py-3 text-sm text-slate-700">{status}</p> : null}
+  </div>;
+}
