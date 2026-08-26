@@ -10,6 +10,11 @@ function hourlyKey(date = new Date()) {
   return date.toISOString().slice(0, 13);
 }
 
+function sixHourKey(date = new Date()) {
+  const day = date.toISOString().slice(0, 10);
+  return `${day}:${Math.floor(date.getUTCHours() / 6)}`;
+}
+
 export async function POST(request: Request) {
   const requestId = getRequestId(request);
   try {
@@ -18,7 +23,15 @@ export async function POST(request: Request) {
     if (request.headers.get("authorization") !== `Bearer ${secret}`) throw new AppError("UNAUTHORIZED", 401, "Invalid worker credentials.");
     const workerId = request.headers.get("x-worker-id")?.slice(0, 120) || "worker";
 
-    await enqueueJob({ type: "EVALUATE_WATCHLISTS", idempotencyKey: `watchlists:${hourlyKey()}`, maxAttempts: 3 });
+    await Promise.all([
+      enqueueJob({ type: "EVALUATE_WATCHLISTS", idempotencyKey: `watchlists:${hourlyKey()}`, maxAttempts: 3 }),
+      enqueueJob({
+        type: "SCAN_PROFESSOR_MATCHES",
+        payload: { reason: "periodic-reconciliation" },
+        idempotencyKey: `professor-match-reconciliation:${sixHourKey()}`,
+        maxAttempts: 3
+      })
+    ]);
 
     let processed = 0;
     for (let i = 0; i < 10; i += 1) {
