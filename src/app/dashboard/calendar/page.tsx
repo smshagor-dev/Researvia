@@ -1,0 +1,1 @@
+import { redirect } from "next/navigation";import { CalendarClient } from "@/components/productivity/CalendarClient";import { getCurrentUser } from "@/server/auth/session";export default async function Page(){if(!await getCurrentUser())redirect("/login");return <CalendarClient/>}
