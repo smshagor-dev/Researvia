@@ -1,5 +1,5 @@
 import { isValidObjectId } from "mongoose";
-import { connectDatabase } from "@/server/db/mongoose";
+import { prepareNotificationDatabase } from "@/server/db/notification-indexes";
 import { AppError } from "@/server/errors/AppError";
 import { Notification } from "@/server/models/Notification";
 
@@ -15,7 +15,7 @@ export async function notifyUser(input: {
   metadata?: NotificationMetadata;
   webVisible?: boolean;
 }) {
-  await connectDatabase();
+  await prepareNotificationDatabase();
   const payload = {
     userId: input.userId,
     type: input.type,
@@ -39,14 +39,14 @@ export async function notifyUser(input: {
 
 export async function getNotificationById(id: string) {
   if (!isValidObjectId(id)) throw new AppError("NOTIFICATION_NOT_FOUND", 404, "Notification not found.");
-  await connectDatabase();
+  await prepareNotificationDatabase();
   const item = await Notification.findById(id).lean();
   if (!item) throw new AppError("NOTIFICATION_NOT_FOUND", 404, "Notification not found.");
   return item;
 }
 
 export async function listNotifications(userId: string, limit = 50, unreadOnly = false) {
-  await connectDatabase();
+  await prepareNotificationDatabase();
   const visible = { userId, "metadata.webVisible": { $ne: false } };
   const filter = unreadOnly ? { ...visible, readAt: null } : visible;
   const items = await Notification.find(filter).sort({ createdAt: -1 }).limit(Math.min(Math.max(limit, 1), 100)).lean();
@@ -55,18 +55,18 @@ export async function listNotifications(userId: string, limit = 50, unreadOnly =
 }
 
 export async function countUnreadNotifications(userId: string) {
-  await connectDatabase();
+  await prepareNotificationDatabase();
   return Notification.countDocuments({ userId, readAt: null, "metadata.webVisible": { $ne: false } });
 }
 
 export async function markNotificationRead(userId: string, id: string) {
   if (!isValidObjectId(id)) throw new AppError("NOTIFICATION_NOT_FOUND", 404, "Notification not found.");
-  await connectDatabase();
+  await prepareNotificationDatabase();
   const result = await Notification.updateOne({ _id: id, userId, "metadata.webVisible": { $ne: false } }, { $set: { readAt: new Date() } });
   if (result.matchedCount !== 1) throw new AppError("NOTIFICATION_NOT_FOUND", 404, "Notification not found.");
 }
 
 export async function markAllNotificationsRead(userId: string) {
-  await connectDatabase();
+  await prepareNotificationDatabase();
   await Notification.updateMany({ userId, readAt: null, "metadata.webVisible": { $ne: false } }, { $set: { readAt: new Date() } });
 }
