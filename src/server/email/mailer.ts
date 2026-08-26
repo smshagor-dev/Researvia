@@ -2,6 +2,14 @@ import nodemailer, { type Transporter } from "nodemailer";
 import { getServerEnv } from "@/config/env";
 import { AppError } from "@/server/errors/AppError";
 
+export type SystemMailboxSmtpTransport = {
+  host: string;
+  port: number;
+  secure: boolean;
+  username: string;
+  password: string;
+};
+
 let transporter: Transporter | null = null;
 
 function assertSmtpTransportReady(): void {
@@ -36,6 +44,26 @@ function getTransporter(): Transporter {
   return transporter;
 }
 
+function customTransporter(config: SystemMailboxSmtpTransport): Transporter {
+  if (!config.host || !config.username || !config.password) {
+    throw new AppError("MAIL_SMTP_NOT_CONFIGURED", 400, "Complete your SMTP settings before using custom delivery.");
+  }
+  return nodemailer.createTransport({
+    host: config.host,
+    port: config.port,
+    secure: config.secure,
+    auth: { user: config.username, pass: config.password },
+    connectionTimeout: 15_000,
+    greetingTimeout: 15_000,
+    socketTimeout: 30_000
+  });
+}
+
+export async function verifySystemMailboxSmtpTransport(config: SystemMailboxSmtpTransport) {
+  const client = customTransporter(config);
+  await client.verify();
+}
+
 export async function sendEmail(input: {
   to: string;
   subject: string;
@@ -56,6 +84,7 @@ export async function sendEmail(input: {
 export async function sendSystemMailboxEmail(input: {
   fromAddress: string;
   fromName: string;
+  replyTo?: string | null;
   to: string[];
   cc?: string[];
   subject: string;
@@ -64,15 +93,17 @@ export async function sendSystemMailboxEmail(input: {
   inReplyTo?: string | null;
   references?: string[];
   attachments?: Array<{ filename: string; contentType: string; content: Buffer }>;
+  transport?: SystemMailboxSmtpTransport | null;
 }) {
-  assertSmtpTransportReady();
   const env = getServerEnv();
   if (!env.SYSTEM_MAIL_DOMAIN || !input.fromAddress.toLowerCase().endsWith(`@${env.SYSTEM_MAIL_DOMAIN}`)) {
     throw new AppError("SYSTEM_MAIL_NOT_CONFIGURED", 503, "System mailbox sending is not configured for this domain.");
   }
 
-  const result = await getTransporter().sendMail({
+  const client = input.transport ? customTransporter(input.transport) : getTransporter();
+  const result = await client.sendMail({
     from: { name: input.fromName || env.SYSTEM_MAIL_FROM_NAME, address: input.fromAddress },
+    replyTo: input.replyTo || undefined,
     envelope: { from: input.fromAddress, to: [...input.to, ...(input.cc ?? [])] },
     to: input.to,
     cc: input.cc,
