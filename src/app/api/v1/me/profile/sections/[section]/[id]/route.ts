@@ -5,6 +5,7 @@ import { getProfileSectionPatchSchema, profileSectionKeySchema } from "@/schemas
 import { assertSameOrigin } from "@/server/auth/request";
 import { getCurrentUser } from "@/server/auth/session";
 import { AppError } from "@/server/errors/AppError";
+import { queueProfessorMatchEvaluation } from "@/server/profile/professor-match-notification.service";
 import { deleteStudentProfileSectionRecord, updateStudentProfileSectionRecord } from "@/server/profile/profile-sections.service";
 import { enforceRateLimit } from "@/server/security/rate-limit";
 
@@ -24,6 +25,14 @@ async function valuesFrom(context: Context) {
   return { section: profileSectionKeySchema.parse(params.section), id: params.id };
 }
 
+async function queueMatching(userId: string, section: string) {
+  try {
+    await queueProfessorMatchEvaluation(userId, `profile-section:${section}`);
+  } catch (error) {
+    console.error("Unable to queue professor match evaluation after profile section change.", error);
+  }
+}
+
 export async function PATCH(request: NextRequest, context: Context) {
   const requestId = getRequestId(request);
   try {
@@ -32,7 +41,9 @@ export async function PATCH(request: NextRequest, context: Context) {
     const { section, id } = await valuesFrom(context);
     await enforceRateLimit("profile:section", user.id, 240, 60 * 60 * 1000);
     const input = await readJson(request, getProfileSectionPatchSchema(section));
-    return apiSuccess({ section, item: await updateStudentProfileSectionRecord(user.id, section, id, input) });
+    const item = await updateStudentProfileSectionRecord(user.id, section, id, input);
+    await queueMatching(user.id, section);
+    return apiSuccess({ section, item });
   } catch (error) {
     return handleApiError(error, requestId);
   }
@@ -46,6 +57,7 @@ export async function DELETE(request: NextRequest, context: Context) {
     const { section, id } = await valuesFrom(context);
     await enforceRateLimit("profile:section", user.id, 240, 60 * 60 * 1000);
     await deleteStudentProfileSectionRecord(user.id, section, id);
+    await queueMatching(user.id, section);
     return apiSuccess({ section, deleted: true });
   } catch (error) {
     return handleApiError(error, requestId);
