@@ -1,4 +1,5 @@
 import { Schema, model, models, type InferSchemaType, type Model } from "mongoose";
+import { SystemMailSettings } from "@/server/models/SystemMailSettings";
 
 const attachmentSchema = new Schema({
   fileId: { type: Schema.Types.ObjectId, required: true },
@@ -32,6 +33,15 @@ const schema = new Schema({
   receivedAt: { type: Date, default: null },
   rawHeaders: { type: Schema.Types.Mixed, default: {} }
 }, { timestamps: true, versionKey: false, strict: "throw" });
+
+schema.pre("save", async function () {
+  if (this.direction !== "OUTBOUND") return;
+  const settings = await SystemMailSettings.findOne({ userId: this.userId }).select("signature").lean();
+  const signature = settings?.signature?.trim() ?? "";
+  if (!signature || this.textBody.trimEnd().endsWith(signature)) return;
+  this.textBody = `${this.textBody.trimEnd()}\n\n-- \n${signature}`.slice(0, 200000);
+  this.snippet = this.textBody.trim().slice(0, 1000);
+});
 
 schema.index({ mailboxId: 1, internetMessageId: 1 }, { unique: true });
 schema.index({ userId: 1, folder: 1, createdAt: -1 });
