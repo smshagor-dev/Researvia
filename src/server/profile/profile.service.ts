@@ -14,7 +14,6 @@ function hasItems(value: unknown): boolean {
 
 export function calculateProfileCompletion(profile: Record<string, unknown>): number {
   const checks = [
-    hasText(profile.fullName),
     hasText(profile.country),
     hasText(profile.currentUniversity),
     hasText(profile.currentDegree),
