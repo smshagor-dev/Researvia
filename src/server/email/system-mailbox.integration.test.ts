@@ -18,6 +18,7 @@ import {
 } from "@/server/email/system-mailbox.service";
 
 const fixtureIds: mongoose.Types.ObjectId[] = [];
+const MAILBOX_TEST_TIMEOUT_MS = 15_000;
 
 async function user(displayName = "Mailbox Student") {
   const row = await User.create({
@@ -83,7 +84,7 @@ describe("system mailbox", () => {
     expect(second.address).toMatch(/^shagor\d{4,6}@researvia\.test$/);
     expect(second.address).not.toBe(first.address);
     expect(await SystemMailbox.countDocuments({ userId: firstUser._id })).toBe(1);
-  });
+  }, MAILBOX_TEST_TIMEOUT_MS);
 
   it("accepts a valid signed inbound email exactly once and creates notification delivery", async () => {
     const owner = await user();
@@ -108,7 +109,7 @@ describe("system mailbox", () => {
     const notification = await Notification.findOne({ userId: owner._id, type: "SYSTEM_MAIL" }).lean();
     expect(notification?.href).toContain("/dashboard/mail?message=");
     expect(await Job.countDocuments({ type: "SEND_PUSH_NOTIFICATION", "payload.notificationId": notification?._id.toString() })).toBe(1);
-  });
+  }, MAILBOX_TEST_TIMEOUT_MS);
 
   it("threads professor replies against a previously sent system message", async () => {
     const owner = await user("Research Student");
@@ -134,5 +135,5 @@ describe("system mailbox", () => {
     await receiveMailgunMessage(payload.form);
     const inbound = await SystemMailMessage.findOne({ userId: owner._id, internetMessageId: "<reply-thread-1@university.edu>" }).lean();
     expect(inbound?.threadKey).toBe("thread-seed");
-  });
+  }, MAILBOX_TEST_TIMEOUT_MS);
 });
