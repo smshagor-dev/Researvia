@@ -47,8 +47,9 @@ export async function uploadStudentProfilePhoto(userId: string, file: File) {
       },
       { upsert: true, new: false, setDefaultsOnInsert: true }
     ).lean();
-    if (previous?.photoFileId) {
-      await storage.delete(previous.photoFileId).catch(() => undefined);
+    const previousFileId = previous?.photoFileId;
+    if (previousFileId) {
+      await storage.delete(previousFileId).catch(() => undefined);
     }
   } catch (error) {
     await storage.delete(upload.id).catch(() => undefined);
@@ -59,19 +60,20 @@ export async function uploadStudentProfilePhoto(userId: string, file: File) {
 export async function readStudentProfilePhoto(userId: string) {
   await connectDatabase();
   const profile = await StudentProfile.findOne({ userId }).select({ photoFileId: 1, photoMimeType: 1, photoOriginalName: 1 }).lean();
-  if (!profile?.photoFileId) throw new AppError("PROFILE_PHOTO_NOT_FOUND", 404, "Profile photo not found.");
+  const fileId = profile?.photoFileId;
+  if (!fileId) throw new AppError("PROFILE_PHOTO_NOT_FOUND", 404, "Profile photo not found.");
   const storage = await photoBucket();
   const chunks: Buffer[] = [];
   await new Promise<void>((resolve, reject) => {
-    const stream = storage.openDownloadStream(profile.photoFileId);
+    const stream = storage.openDownloadStream(fileId);
     stream.on("data", (chunk: Buffer) => chunks.push(chunk));
     stream.on("end", resolve);
     stream.on("error", reject);
   });
   return {
     buffer: Buffer.concat(chunks),
-    mimeType: profile.photoMimeType || "application/octet-stream",
-    name: profile.photoOriginalName || "profile-photo"
+    mimeType: profile?.photoMimeType || "application/octet-stream",
+    name: profile?.photoOriginalName || "profile-photo"
   };
 }
 
@@ -82,7 +84,8 @@ export async function deleteStudentProfilePhoto(userId: string) {
     { $set: { photoFileId: null, photoMimeType: "", photoOriginalName: "", photoUpdatedAt: null } },
     { new: false }
   ).lean();
-  if (!previous?.photoFileId) return;
+  const previousFileId = previous?.photoFileId;
+  if (!previousFileId) return;
   const storage = await photoBucket();
-  await storage.delete(previous.photoFileId).catch(() => undefined);
+  await storage.delete(previousFileId).catch(() => undefined);
 }
