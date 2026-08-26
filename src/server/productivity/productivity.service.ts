@@ -1,0 +1,33 @@
+import mongoose from "mongoose";
+import { prepareProductivityDatabase } from "@/server/db/productivity-indexes";
+import { AppError } from "@/server/errors/AppError";
+import { sendSystemMailMessage } from "@/server/email/system-mailbox.service";
+import { AcademicContact } from "@/server/models/AcademicContact";
+import { PlannerTask } from "@/server/models/PlannerTask";
+import { RecommendationRequest } from "@/server/models/RecommendationRequest";
+import { SupportTicket } from "@/server/models/SupportTicket";
+
+type Input = Record<string, unknown>;
+function valid(id:string){return mongoose.isValidObjectId(id);}
+function idError(code:string,label:string){return new AppError(code,404,`${label} not found.`);}
+
+export async function listPlannerTasks(userId:string){await prepareProductivityDatabase();return PlannerTask.find({userId}).sort({status:1,dueAt:1,createdAt:-1}).limit(500).lean();}
+export async function createPlannerTask(userId:string,input:Input){await prepareProductivityDatabase();return PlannerTask.create({userId,...input,completedAt:input.status==="DONE"?new Date():null});}
+export async function updatePlannerTask(userId:string,id:string,input:Input){if(!valid(id))throw idError("TASK_NOT_FOUND","Task");await prepareProductivityDatabase();const set={...input} as Input;if(input.status==="DONE")set.completedAt=new Date();else if(typeof input.status==="string")set.completedAt=null;const item=await PlannerTask.findOneAndUpdate({_id:id,userId},{$set:set},{returnDocument:"after",runValidators:true}).lean();if(!item)throw idError("TASK_NOT_FOUND","Task");return item;}
+export async function deletePlannerTask(userId:string,id:string){if(!valid(id))throw idError("TASK_NOT_FOUND","Task");await prepareProductivityDatabase();const r=await PlannerTask.deleteOne({_id:id,userId});if(!r.deletedCount)throw idError("TASK_NOT_FOUND","Task");}
+
+export async function listAcademicContacts(userId:string){await prepareProductivityDatabase();return AcademicContact.find({userId}).sort({nextFollowUpAt:1,updatedAt:-1}).limit(500).lean();}
+export async function createAcademicContact(userId:string,input:Input){await prepareProductivityDatabase();return AcademicContact.create({userId,...input});}
+export async function updateAcademicContact(userId:string,id:string,input:Input){if(!valid(id))throw idError("CONTACT_NOT_FOUND","Contact");await prepareProductivityDatabase();const item=await AcademicContact.findOneAndUpdate({_id:id,userId},{$set:input},{returnDocument:"after",runValidators:true}).lean();if(!item)throw idError("CONTACT_NOT_FOUND","Contact");return item;}
+export async function deleteAcademicContact(userId:string,id:string){if(!valid(id))throw idError("CONTACT_NOT_FOUND","Contact");await prepareProductivityDatabase();const r=await AcademicContact.deleteOne({_id:id,userId});if(!r.deletedCount)throw idError("CONTACT_NOT_FOUND","Contact");}
+
+export async function listRecommendationRequests(userId:string){await prepareProductivityDatabase();return RecommendationRequest.find({userId}).sort({deadline:1,updatedAt:-1}).limit(300).lean();}
+export async function createRecommendationRequest(userId:string,input:Input){await prepareProductivityDatabase();return RecommendationRequest.create({userId,...input});}
+export async function updateRecommendationRequest(userId:string,id:string,input:Input){if(!valid(id))throw idError("RECOMMENDATION_NOT_FOUND","Recommendation request");await prepareProductivityDatabase();const set={...input} as Input;if(input.status==="RECEIVED")set.receivedAt=new Date();const item=await RecommendationRequest.findOneAndUpdate({_id:id,userId},{$set:set},{returnDocument:"after",runValidators:true}).lean();if(!item)throw idError("RECOMMENDATION_NOT_FOUND","Recommendation request");return item;}
+export async function deleteRecommendationRequest(userId:string,id:string){if(!valid(id))throw idError("RECOMMENDATION_NOT_FOUND","Recommendation request");await prepareProductivityDatabase();const r=await RecommendationRequest.deleteOne({_id:id,userId});if(!r.deletedCount)throw idError("RECOMMENDATION_NOT_FOUND","Recommendation request");}
+export async function sendRecommendationRequest(userId:string,id:string,input:{subject?:string;text?:string}){if(!valid(id))throw idError("RECOMMENDATION_NOT_FOUND","Recommendation request");await prepareProductivityDatabase();const item=await RecommendationRequest.findOne({_id:id,userId});if(!item)throw idError("RECOMMENDATION_NOT_FOUND","Recommendation request");const deadline=item.deadline?new Date(item.deadline).toLocaleDateString():"the application deadline";const subject=input.subject?.trim()||`Recommendation letter request — ${item.applicationName}`;const text=input.text?.trim()||`Dear ${item.refereeName},\n\nI hope you are well. I am applying to ${item.applicationName} and would be grateful if you could provide a recommendation letter for my application. The requested deadline is ${deadline}.\n\nPlease let me know if you need any additional information or documents from me.\n\nThank you very much for your time and support.`;const sent=await sendSystemMailMessage(userId,{to:[item.refereeEmail],subject,text});item.status="REQUESTED";item.requestedAt=new Date();item.lastMessageId=sent.id;if(!item.reminderAt)item.reminderAt=new Date(Date.now()+7*24*60*60*1000);await item.save();return item.toObject();}
+
+export async function listSupportTickets(userId:string){await prepareProductivityDatabase();return SupportTicket.find({userId}).sort({updatedAt:-1}).limit(200).lean();}
+export async function createSupportTicket(userId:string,input:Input){await prepareProductivityDatabase();return SupportTicket.create({userId,...input,messages:[{authorRole:"USER",body:String(input.description??"")} ]});}
+export async function updateSupportTicket(userId:string,id:string,input:Input){if(!valid(id))throw idError("SUPPORT_TICKET_NOT_FOUND","Support ticket");await prepareProductivityDatabase();const set={...input} as Input;if(input.status==="RESOLVED"||input.status==="CLOSED")set.resolvedAt=new Date();const item=await SupportTicket.findOneAndUpdate({_id:id,userId},{$set:set},{returnDocument:"after",runValidators:true}).lean();if(!item)throw idError("SUPPORT_TICKET_NOT_FOUND","Support ticket");return item;}
+export async function replySupportTicket(userId:string,id:string,body:string){if(!valid(id))throw idError("SUPPORT_TICKET_NOT_FOUND","Support ticket");await prepareProductivityDatabase();const item=await SupportTicket.findOneAndUpdate({_id:id,userId,status:{$ne:"CLOSED"}},{$push:{messages:{authorRole:"USER",body,createdAt:new Date()}},$set:{status:"OPEN"}},{returnDocument:"after",runValidators:true}).lean();if(!item)throw idError("SUPPORT_TICKET_NOT_FOUND","Support ticket");return item;}

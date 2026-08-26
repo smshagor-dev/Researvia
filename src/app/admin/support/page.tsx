@@ -1,0 +1,1 @@
+import { SupportAdminClient } from "@/components/admin/SupportAdminClient";export default function Page(){return <SupportAdminClient/>}
