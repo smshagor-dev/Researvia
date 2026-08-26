@@ -27,6 +27,6 @@ const schema = new Schema({
   refereeMessage: { type: String, default: "", maxlength: 8000 }
 }, { timestamps: true, versionKey: false, strict: "throw" });
 schema.index({ userId: 1, status: 1, deadline: 1 });
-schema.index({ portalTokenHash: 1 }, { unique: true, sparse: true });
+schema.index({ portalTokenHash: 1 }, { unique: true, partialFilterExpression: { portalTokenHash: { $type: "string" } } });
 export type RecommendationRequestDocument = InferSchemaType<typeof schema>;
 export const RecommendationRequest = (models.RecommendationRequest as Model<RecommendationRequestDocument> | undefined) ?? model<RecommendationRequestDocument>("RecommendationRequest", schema);
