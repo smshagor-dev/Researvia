@@ -10,6 +10,7 @@ function sixHourKey(date=new Date()){const day=date.toISOString().slice(0,10);re
 export async function POST(request:Request){const requestId=getRequestId(request);try{const secret=getServerEnv().WORKER_SECRET;if(!secret)throw new AppError("WORKER_NOT_CONFIGURED",503,"Background worker is not configured.");if(request.headers.get("authorization")!==`Bearer ${secret}`)throw new AppError("UNAUTHORIZED",401,"Invalid worker credentials.");const workerId=request.headers.get("x-worker-id")?.slice(0,120)||"worker";await Promise.all([
 enqueueJob({type:"EVALUATE_WATCHLISTS",idempotencyKey:`watchlists:${hourlyKey()}`,maxAttempts:3}),
 enqueueJob({type:"SCAN_ACADEMIC_REMINDERS",idempotencyKey:`academic-reminders:${hourlyKey()}`,maxAttempts:3}),
+enqueueJob({type:"SCAN_SYSTEM_IMAP",payload:{reason:"periodic-reconciliation"},idempotencyKey:`system-imap-scan:${hourlyKey()}`,maxAttempts:3}),
 enqueueJob({type:"SCAN_PROFESSOR_CONTACT_ENRICHMENT",payload:{reason:"periodic-reconciliation"},idempotencyKey:`professor-contact-reconciliation:${dailyKey()}`,maxAttempts:3}),
 enqueueJob({type:"SCAN_PROFESSOR_MATCHES",payload:{reason:"periodic-reconciliation"},idempotencyKey:`professor-match-reconciliation:${sixHourKey()}`,maxAttempts:3}),
 enqueueJob({type:"SCAN_ACADEMIC_MATCHES",payload:{reason:"periodic-reconciliation"},idempotencyKey:`academic-match-reconciliation:${sixHourKey()}`,maxAttempts:3}),
