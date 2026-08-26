@@ -2,7 +2,8 @@ import { Schema, model, models, type InferSchemaType, type Model } from "mongoos
 
 const schema = new Schema({
   userId: { type: Schema.Types.ObjectId, ref: "User", required: true, index: true },
-  emailAccountId: { type: Schema.Types.ObjectId, ref: "EmailAccount", required: true, index: true },
+  senderType: { type: String, enum: ["CONNECTED", "SYSTEM"], default: "CONNECTED", required: true, index: true },
+  emailAccountId: { type: Schema.Types.ObjectId, ref: "EmailAccount", default: null, index: true },
   name: { type: String, required: true, trim: true, maxlength: 180 },
   purpose: { type: String, required: true, trim: true, maxlength: 120 },
   subjectTemplate: { type: String, required: true, trim: true, maxlength: 300 },
@@ -13,5 +14,6 @@ const schema = new Schema({
 }, { timestamps: true, versionKey: false, strict: "throw" });
 
 schema.index({ userId: 1, createdAt: -1 });
+schema.index({ userId: 1, senderType: 1, createdAt: -1 });
 export type OutreachCampaignDocument = InferSchemaType<typeof schema>;
 export const OutreachCampaign = (models.OutreachCampaign as Model<OutreachCampaignDocument> | undefined) ?? model<OutreachCampaignDocument>("OutreachCampaign", schema);

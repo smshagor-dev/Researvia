@@ -1,6 +1,7 @@
 import { prepareAuthDatabase } from "@/server/db/auth-indexes";
 import { assertEmailReady } from "@/server/email/mailer";
 import { sendPasswordResetEmail, sendVerificationEmail } from "@/server/email/auth-email";
+import { provisionSystemMailboxBestEffort } from "@/server/email/system-mailbox-provisioning";
 import { AppError } from "@/server/errors/AppError";
 import { EmailVerificationToken } from "@/server/models/EmailVerificationToken";
 import { PasswordResetToken } from "@/server/models/PasswordResetToken";
@@ -56,7 +57,8 @@ export async function verifyEmailAddress(token: string): Promise<void> {
     { new: true }
   ).lean();
   if (!claimed) throw new AppError("INVALID_VERIFICATION_TOKEN", 400, "This verification link is invalid or has expired.");
-  await User.updateOne({ _id: claimed.userId, status: "ACTIVE", emailVerifiedAt: null }, { $set: { emailVerifiedAt: now } });
+  const result = await User.updateOne({ _id: claimed.userId, status: "ACTIVE", emailVerifiedAt: null }, { $set: { emailVerifiedAt: now } });
+  if (result.matchedCount === 1) await provisionSystemMailboxBestEffort(String(claimed.userId));
 }
 
 export async function resendVerificationEmail(email: string): Promise<void> {
@@ -92,6 +94,7 @@ export async function loginStudent(
 
   user.lastLoginAt = new Date();
   await user.save();
+  void provisionSystemMailboxBestEffort(user._id.toString());
   const session = await createSession({ userId: user._id.toString(), rememberMe: input.rememberMe, ipAddress: metadata.ipAddress, userAgent: metadata.userAgent });
   return { requiresTwoFactor: false, ...session };
 }

@@ -8,7 +8,8 @@ import { createCampaign, listCampaigns } from "@/server/outreach/outreach.servic
 
 export const runtime = "nodejs";
 const schema = z.object({
-  accountId: z.string().min(1),
+  senderType: z.enum(["SYSTEM", "CONNECTED"]).default("SYSTEM"),
+  accountId: z.string().min(1).nullable().optional(),
   name: z.string().trim().min(2).max(180),
   purpose: z.string().trim().min(2).max(120),
   subject: z.string().trim().min(1).max(300),
@@ -16,7 +17,7 @@ const schema = z.object({
   professorIds: z.array(z.string().min(1)).max(100).optional(),
   recipients: z.array(z.object({ email: z.string().email(), name: z.string().trim().max(220).optional() })).max(100).optional(),
   followUpAfterDays: z.number().int().min(1).max(60).nullable().optional()
-});
+}).strict().refine((value) => value.senderType === "SYSTEM" || Boolean(value.accountId), { message: "Choose a connected email account.", path: ["accountId"] });
 
 async function requireUser() {
   const user = await getCurrentUser();

@@ -52,10 +52,10 @@ export function NotificationLiveBridge() {
 
         if (!seenRef.current) seenRef.current = loadSeen();
         const seen = seenRef.current;
-        const match = items.find((item) => item.type === "PROFESSOR_MATCH" && !seen.has(String(item._id)));
+        const next = items.find((item) => ["PROFESSOR_MATCH", "SYSTEM_MAIL"].includes(item.type) && !seen.has(String(item._id)));
         for (const item of items) seen.add(String(item._id));
         persistSeen(seen);
-        if (match && document.visibilityState === "visible") setToast(match);
+        if (next && document.visibilityState === "visible") setToast(next);
       } catch {
         // Polling is a best-effort web notification fallback; the durable inbox remains authoritative.
       }
@@ -74,14 +74,15 @@ export function NotificationLiveBridge() {
   }, []);
 
   if (!toast) return null;
-  const score = typeof toast.metadata?.matchScore === "number" ? toast.metadata.matchScore : null;
+  const isMail = toast.type === "SYSTEM_MAIL";
+  const score = !isMail && typeof toast.metadata?.matchScore === "number" ? toast.metadata.matchScore : null;
 
   return (
     <div className="fixed bottom-5 right-5 z-50 w-[min(92vw,390px)] rounded-xl border border-slate-200 bg-white p-4 shadow-xl" role="status" aria-live="polite">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">New professor match</p>
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{isMail ? "New email" : "New professor match"}</p>
             {score !== null ? <span className="rounded-full bg-slate-950 px-2 py-0.5 text-xs font-semibold text-white">{score}%</span> : null}
           </div>
           <h2 className="mt-1 font-semibold text-slate-950">{toast.title}</h2>
@@ -90,8 +91,8 @@ export function NotificationLiveBridge() {
         <button type="button" onClick={() => setToast(null)} className="rounded-md px-2 py-1 text-sm text-slate-400 hover:bg-slate-100 hover:text-slate-700" aria-label="Dismiss notification">×</button>
       </div>
       <div className="mt-4 flex justify-end gap-2">
-        <Link href="/dashboard/notifications" onClick={() => setToast(null)} className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Inbox</Link>
-        <Link href={toast.href || "/dashboard/notifications"} onClick={() => setToast(null)} className="rounded-lg bg-slate-950 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800">View professor</Link>
+        <Link href="/dashboard/notifications" onClick={() => setToast(null)} className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Notifications</Link>
+        <Link href={toast.href || (isMail ? "/dashboard/mail" : "/dashboard/notifications")} onClick={() => setToast(null)} className="rounded-lg bg-slate-950 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800">{isMail ? "Open mail" : "View professor"}</Link>
       </div>
     </div>
   );
