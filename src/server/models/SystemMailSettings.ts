@@ -20,6 +20,13 @@ const schema = new Schema({
   imapSecure: { type: Boolean, default: true },
   imapUsername: { type: String, default: "", trim: true, maxlength: 320 },
   imapPasswordEnc: { type: String, default: null, select: false },
+  imapSyncEnabled: { type: Boolean, default: false, index: true },
+  imapMailbox: { type: String, default: "INBOX", trim: true, maxlength: 255 },
+  imapUidValidity: { type: String, default: null, maxlength: 64 },
+  imapLastUid: { type: Number, default: 0, min: 0 },
+  imapSyncStatus: { type: String, enum: ["IDLE", "RUNNING", "ERROR"], default: "IDLE", index: true },
+  imapSyncStartedAt: { type: Date, default: null },
+  imapLastImportedCount: { type: Number, default: 0, min: 0 },
   lastSmtpTestAt: { type: Date, default: null },
   lastImapTestAt: { type: Date, default: null },
   lastImapSyncAt: { type: Date, default: null },
@@ -27,6 +34,7 @@ const schema = new Schema({
 }, { timestamps: true, versionKey: false, strict: "throw" });
 
 schema.index({ deliveryMode: 1, updatedAt: -1 });
+schema.index({ imapSyncEnabled: 1, lastImapSyncAt: 1 });
 
 export type SystemMailSettingsDocument = InferSchemaType<typeof schema>;
 export const SystemMailSettings = (models.SystemMailSettings as Model<SystemMailSettingsDocument> | undefined) ?? model<SystemMailSettingsDocument>("SystemMailSettings", schema);
