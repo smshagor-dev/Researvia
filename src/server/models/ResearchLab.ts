@@ -25,9 +25,12 @@ const researchLabSchema = new Schema({
 }, { timestamps: true, versionKey: false, strict: "throw" });
 
 researchLabSchema.index({ slug: 1 }, { unique: true });
-researchLabSchema.index({ name: "text", researchTopics: "text", researchAreas: "text", description: "text" });
+// Keep the legacy text-index key set unchanged so existing production collections
+// can create/verify indexes without conflicting with MongoDB's single-text-index rule.
+researchLabSchema.index({ name: "text", researchTopics: "text", description: "text" });
 researchLabSchema.index({ status: 1, universityId: 1, lastVerifiedAt: -1 });
 researchLabSchema.index({ departmentId: 1, status: 1, name: 1 });
+researchLabSchema.index({ researchAreas: 1, status: 1 });
 
 export type ResearchLabDocument = InferSchemaType<typeof researchLabSchema>;
 export const ResearchLab = (models.ResearchLab as Model<ResearchLabDocument> | undefined) ?? model<ResearchLabDocument>("ResearchLab", researchLabSchema);
