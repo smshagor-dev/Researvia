@@ -2,6 +2,7 @@ import { isValidObjectId } from "mongoose";
 import { prepareNotificationDatabase } from "@/server/db/notification-indexes";
 import { AppError } from "@/server/errors/AppError";
 import { Notification } from "@/server/models/Notification";
+import { SystemMailSettings } from "@/server/models/SystemMailSettings";
 
 type NotificationMetadata = Record<string, unknown>;
 
@@ -16,6 +17,17 @@ export async function notifyUser(input: {
   webVisible?: boolean;
 }) {
   await prepareNotificationDatabase();
+  let webVisible = input.webVisible !== false;
+  let pushAllowed = true;
+
+  if (input.type === "SYSTEM_MAIL") {
+    const mailSettings = await SystemMailSettings.findOne({ userId: input.userId }).select("webNotifications pushNotifications").lean();
+    if (mailSettings) {
+      webVisible = mailSettings.webNotifications !== false;
+      pushAllowed = mailSettings.pushNotifications !== false;
+    }
+  }
+
   const payload = {
     userId: input.userId,
     type: input.type,
@@ -23,7 +35,7 @@ export async function notifyUser(input: {
     message: input.message,
     href: input.href ?? null,
     ...(input.dedupeKey ? { dedupeKey: input.dedupeKey } : {}),
-    metadata: { ...(input.metadata ?? {}), webVisible: input.webVisible !== false }
+    metadata: { ...(input.metadata ?? {}), webVisible, pushAllowed }
   };
 
   if (!input.dedupeKey) return Notification.create(payload);
