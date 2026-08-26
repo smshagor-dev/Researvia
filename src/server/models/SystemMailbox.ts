@@ -13,5 +13,5 @@ const schema = new Schema({
 }, { timestamps: true, versionKey: false, strict: "throw" });
 
 schema.index({ status: 1, createdAt: -1 });
-export type SystemMailboxDocument = InferSchemaType<typeof schema>;
+export type SystemMailboxDocument = InferSchemaType<typeof schema> & { toObject?: () => Record<string, unknown> };
 export const SystemMailbox = (models.SystemMailbox as Model<SystemMailboxDocument> | undefined) ?? model<SystemMailboxDocument>("SystemMailbox", schema);
