@@ -1,5 +1,6 @@
 import { processOutreachFollowUp, processOutreachRecipient, reconcileOutreachReplies } from "@/server/outreach/outreach.service";
 import { syncEmailMetadata } from "@/server/email/email-account.service";
+import { enqueueEnabledSystemImapSyncs, syncSystemImap } from "@/server/email/imap-sync.service";
 import { processImportJob } from "@/server/imports/import.service";
 import { deleteGridFsFiles } from "@/server/documents/document.service";
 import { evaluateEnabledWatchlists } from "@/server/watchlists/watchlist-evaluator.service";
@@ -15,6 +16,8 @@ export async function processJob(type:string,payload:Record<string,unknown>){
 if(type==="SEND_OUTREACH_RECIPIENT"){const recipientId=String(payload.recipientId??"");if(!recipientId)throw new Error("Missing recipientId.");await processOutreachRecipient(recipientId);return;}
 if(type==="SEND_OUTREACH_FOLLOWUP"){const recipientId=String(payload.recipientId??"");if(!recipientId)throw new Error("Missing recipientId.");await processOutreachFollowUp(recipientId);return;}
 if(type==="SYNC_EMAIL_ACCOUNT"){const userId=String(payload.userId??"");const accountId=String(payload.accountId??"");if(!userId||!accountId)throw new Error("Missing email sync identifiers.");await syncEmailMetadata(userId,accountId);await reconcileOutreachReplies(userId);return;}
+if(type==="SYNC_SYSTEM_IMAP"){const userId=String(payload.userId??"");if(!userId)throw new Error("Missing userId for IMAP sync.");await syncSystemImap(userId);await reconcileOutreachReplies(userId);return;}
+if(type==="SCAN_SYSTEM_IMAP"){await enqueueEnabledSystemImapSyncs(String(payload.reason??"periodic-reconciliation"));return;}
 if(type==="PROCESS_IMPORT"){const importJobId=String(payload.importJobId??"");if(!importJobId)throw new Error("Missing importJobId.");await processImportJob(importJobId);await queueAcademicEnrichmentForImportJob(importJobId);return;}
 if(type==="ENRICH_PROFESSOR_CONTACT"){const professorId=String(payload.professorId??"");if(!professorId)throw new Error("Missing professorId.");await enrichProfessorContact(professorId);return;}
 if(type==="ENRICH_UNIVERSITY_METADATA"){const universityId=String(payload.universityId??"");if(!universityId)throw new Error("Missing universityId.");await enrichUniversityMetadata(universityId);return;}
