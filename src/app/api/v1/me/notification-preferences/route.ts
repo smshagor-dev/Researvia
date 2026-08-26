@@ -8,6 +8,7 @@ import {
   getNotificationPreferences,
   updateNotificationPreferences
 } from "@/server/notifications/notification-preferences.service";
+import { queueProfessorMatchEvaluation } from "@/server/profile/professor-match-notification.service";
 import { enforceRateLimit } from "@/server/security/rate-limit";
 
 export const runtime = "nodejs";
@@ -40,8 +41,13 @@ export async function PATCH(request: Request) {
     assertSameOrigin(request);
     const user = await requireUser();
     await enforceRateLimit("notification:preferences", user.id, 60, 60 * 60 * 1000);
-    const input = await readJson(request, schema);
-    return apiSuccess({ preferences: await updateNotificationPreferences(user.id, input) });
+    const preferences = await updateNotificationPreferences(user.id, await readJson(request, schema));
+    try {
+      await queueProfessorMatchEvaluation(user.id, "notification-preferences-updated");
+    } catch (error) {
+      console.error("Unable to queue professor match evaluation after notification preference change.", error);
+    }
+    return apiSuccess({ preferences });
   } catch (error) {
     return handleApiError(error, requestId);
   }
