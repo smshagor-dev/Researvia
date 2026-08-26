@@ -1,6 +1,8 @@
 import { Schema, model, models, type InferSchemaType, type Model } from "mongoose";
 
 export const applicationPacketDocumentKinds = ["CV","TRANSCRIPT","DEGREE_CERTIFICATE","ENROLLMENT_CERTIFICATE","MOTIVATION_LETTER","SOP","PROPOSAL","LANGUAGE_CERTIFICATE","COURSE_CERTIFICATE","PUBLICATION","PASSPORT","OTHER"] as const;
+export type ApplicationPacketDocumentKind = (typeof applicationPacketDocumentKinds)[number];
+
 const schema = new Schema({
   userId: { type: Schema.Types.ObjectId, ref: "User", required: true, index: true },
   applicationId: { type: Schema.Types.ObjectId, ref: "Application", required: true, index: true },

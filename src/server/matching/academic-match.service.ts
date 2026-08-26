@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import type { Types } from "mongoose";
 import { connectDatabase } from "@/server/db/mongoose";
 import { AcademicMatchAlert } from "@/server/models/AcademicMatchAlert";
 import { Notification } from "@/server/models/Notification";
@@ -26,7 +27,7 @@ type MatchProfile = {
 };
 
 type ScholarshipCandidate = {
-  _id: unknown;
+  _id: Types.ObjectId;
   name: string;
   slug: string;
   country: string;
@@ -38,7 +39,7 @@ type ScholarshipCandidate = {
 };
 
 type OpportunityCandidate = {
-  _id: unknown;
+  _id: Types.ObjectId;
   title: string;
   slug: string;
   type: string;
@@ -104,10 +105,7 @@ function profileTopics(profile: MatchProfile) {
 }
 
 function scholarshipScore(profile: MatchProfile, item: ScholarshipCandidate) {
-  const topicScore = overlap(
-    profileTopics(profile),
-    tokens([...(item.studyFields ?? []), item.name, item.eligibility])
-  );
+  const topicScore = overlap(profileTopics(profile), tokens([...(item.studyFields ?? []), item.name, item.eligibility]));
   let score = 28 + topicScore * 40;
 
   if ((profile.targetCountries ?? []).some((country) => country.toLowerCase() === item.country.toLowerCase())) score += 15;
