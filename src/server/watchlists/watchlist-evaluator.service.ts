@@ -12,7 +12,7 @@ const escapeRegex = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$
 const regexes = (values: string[]) => values.filter(Boolean).map((value) => new RegExp(escapeRegex(value), "i"));
 
 async function scholarshipMatches(watch: { query: string; countries: string[]; researchTopics: string[]; fundingTypes: string[] }, since: Date): Promise<Match[]> {
-  let query = Scholarship.find().where("status").equals("PUBLISHED").where("updatedAt").gt(since);
+  let query = Scholarship.find().where("status").equals("PUBLISHED").where("updatedAt").gt(since.getTime());
   if (watch.countries.length) query = query.where("country").in(watch.countries);
   if (watch.fundingTypes.length) query = query.where("fundingType").in(watch.fundingTypes);
   const topics = regexes(watch.researchTopics);
@@ -24,7 +24,7 @@ async function scholarshipMatches(watch: { query: string; countries: string[]; r
 }
 
 async function opportunityMatches(watch: { query: string; countries: string[]; researchTopics: string[] }, since: Date): Promise<Match[]> {
-  let query = Opportunity.find().where("status").equals("PUBLISHED").where("updatedAt").gt(since);
+  let query = Opportunity.find().where("status").equals("PUBLISHED").where("updatedAt").gt(since.getTime());
   if (watch.countries.length) query = query.where("country").in(watch.countries);
   const topics = regexes(watch.researchTopics);
   if (topics.length) query = query.or([{ fields: { $in: topics } }, { researchAreas: { $in: topics } }]);
@@ -35,7 +35,7 @@ async function opportunityMatches(watch: { query: string; countries: string[]; r
 }
 
 async function professorMatches(watch: { query: string; countries: string[]; researchTopics: string[]; professorId?: unknown }, since: Date): Promise<Match[]> {
-  let query = Professor.find().where("status").equals("PUBLISHED").where("updatedAt").gt(since);
+  let query = Professor.find().where("status").equals("PUBLISHED").where("updatedAt").gt(since.getTime());
   if (watch.professorId) query = query.where("_id").equals(watch.professorId);
   if (watch.countries.length) query = query.where("country").in(watch.countries);
   const topics = regexes(watch.researchTopics);
@@ -47,7 +47,7 @@ async function professorMatches(watch: { query: string; countries: string[]; res
 }
 
 async function labMatches(watch: { query: string; researchTopics: string[] }, since: Date): Promise<Match[]> {
-  let query = ResearchLab.find().where("status").equals("PUBLISHED").where("updatedAt").gt(since);
+  let query = ResearchLab.find().where("status").equals("PUBLISHED").where("updatedAt").gt(since.getTime());
   const topics = regexes(watch.researchTopics);
   if (topics.length) query = query.where("researchTopics").in(topics);
   const text = watch.query.trim();
@@ -57,7 +57,7 @@ async function labMatches(watch: { query: string; researchTopics: string[] }, si
 }
 
 async function deadlineChangeMatches(since: Date): Promise<Match[]> {
-  const changes = await DataChangeEvent.find().where("field").equals("deadline").where("createdAt").gt(since).where("entityType").in(["SCHOLARSHIP", "OPPORTUNITY"]).sort({ createdAt: -1 }).limit(10).lean();
+  const changes = await DataChangeEvent.find().where("field").equals("deadline").where("createdAt").gt(since.getTime()).where("entityType").in(["SCHOLARSHIP", "OPPORTUNITY"]).sort({ createdAt: -1 }).limit(10).lean();
   const matches: Match[] = [];
   for (const change of changes) {
     if (change.entityType === "SCHOLARSHIP") {
