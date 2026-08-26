@@ -41,6 +41,11 @@ export type ProfessorCard = {
   source: string;
   sourceUrl: string;
   lastVerifiedAt: string | null;
+  contactEnrichmentStatus: string;
+  contactConfidence: string;
+  contactEmailSource: string;
+  contactWebsiteSource: string;
+  contactEnrichedAt: string | null;
 };
 
 function universityDto(value: Record<string, unknown>): UniversityCard {
@@ -86,7 +91,12 @@ function professorDto(value: Record<string, unknown>): ProfessorCard {
     citedByCount: Number(value.citedByCount ?? 0),
     source: String(value.source ?? "MANUAL"),
     sourceUrl: String(value.sourceUrl ?? ""),
-    lastVerifiedAt: value.lastVerifiedAt ? new Date(value.lastVerifiedAt as Date).toISOString() : null
+    lastVerifiedAt: value.lastVerifiedAt ? new Date(value.lastVerifiedAt as Date).toISOString() : null,
+    contactEnrichmentStatus: String(value.contactEnrichmentStatus ?? "NOT_STARTED"),
+    contactConfidence: String(value.contactConfidence ?? "NONE"),
+    contactEmailSource: String(value.contactEmailSource ?? "NONE"),
+    contactWebsiteSource: String(value.contactWebsiteSource ?? "NONE"),
+    contactEnrichedAt: value.contactEnrichedAt ? new Date(value.contactEnrichedAt as Date).toISOString() : null
   };
 }
 
