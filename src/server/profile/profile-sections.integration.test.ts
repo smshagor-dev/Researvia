@@ -29,10 +29,13 @@ beforeEach(async () => {
     StudentResearchProfile.deleteMany({}),
     StudentSkill.deleteMany({})
   ]);
-  const [user, otherUser] = await User.create([
+  const users = await User.create([
     { email: "sections-student@example.com", displayName: "Sections Student", role: "STUDENT", status: "ACTIVE", emailVerifiedAt: new Date() },
     { email: "sections-other@example.com", displayName: "Other Student", role: "STUDENT", status: "ACTIVE", emailVerifiedAt: new Date() }
   ]);
+  const user = users[0];
+  const otherUser = users[1];
+  if (!user || !otherUser) throw new Error("Profile section test users were not created.");
   userId = user._id.toString();
   otherUserId = otherUser._id.toString();
 });
@@ -70,7 +73,9 @@ describe("normalized student profile sections", () => {
     });
 
     const rows = await getStudentProfileSection(userId, "education");
-    expect(Array.isArray(rows) && rows).toHaveLength(2);
+    expect(Array.isArray(rows)).toBe(true);
+    if (!Array.isArray(rows)) throw new Error("Education section should be repeatable.");
+    expect(rows).toHaveLength(2);
 
     await expect(updateStudentProfileSectionRecord(otherUserId, "education", String(first.id), { institution: "Hijacked" }))
       .rejects.toMatchObject({ code: "PROFILE_SECTION_NOT_FOUND" });
@@ -80,7 +85,9 @@ describe("normalized student profile sections", () => {
 
     await deleteStudentProfileSectionRecord(userId, "education", String(second.id));
     const remaining = await getStudentProfileSection(userId, "education");
-    expect(Array.isArray(remaining) && remaining).toHaveLength(1);
+    expect(Array.isArray(remaining)).toBe(true);
+    if (!Array.isArray(remaining)) throw new Error("Education section should be repeatable.");
+    expect(remaining).toHaveLength(1);
   });
 
   it("syncs normalized skills into the backward-compatible profile summary", async () => {
