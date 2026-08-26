@@ -1,6 +1,18 @@
 import nodemailer, { type Transporter } from "nodemailer";
 import { getServerEnv } from "@/config/env";
+import { prepareSystemMailboxDatabase } from "@/server/db/system-mailbox-indexes";
 import { AppError } from "@/server/errors/AppError";
+import { SystemMailbox } from "@/server/models/SystemMailbox";
+import { SystemMailSettings } from "@/server/models/SystemMailSettings";
+import { decryptSecret } from "@/server/security/crypto-box";
+
+export type SystemMailboxSmtpTransport = {
+  host: string;
+  port: number;
+  secure: boolean;
+  username: string;
+  password: string;
+};
 
 let transporter: Transporter | null = null;
 
@@ -36,6 +48,26 @@ function getTransporter(): Transporter {
   return transporter;
 }
 
+function customTransporter(config: SystemMailboxSmtpTransport): Transporter {
+  if (!config.host || !config.username || !config.password) {
+    throw new AppError("MAIL_SMTP_NOT_CONFIGURED", 400, "Complete your SMTP settings before using custom delivery.");
+  }
+  return nodemailer.createTransport({
+    host: config.host,
+    port: config.port,
+    secure: config.secure,
+    auth: { user: config.username, pass: config.password },
+    connectionTimeout: 15_000,
+    greetingTimeout: 15_000,
+    socketTimeout: 30_000
+  });
+}
+
+export async function verifySystemMailboxSmtpTransport(config: SystemMailboxSmtpTransport) {
+  const client = customTransporter(config);
+  await client.verify();
+}
+
 export async function sendEmail(input: {
   to: string;
   subject: string;
@@ -53,9 +85,39 @@ export async function sendEmail(input: {
   });
 }
 
+async function resolveUserMailboxDelivery(fromAddress: string) {
+  await prepareSystemMailboxDatabase();
+  const mailbox = await SystemMailbox.findOne({ address: fromAddress.toLowerCase() }).select("userId displayName").lean();
+  if (!mailbox) return null;
+  const settings = await SystemMailSettings.findOne({ userId: mailbox.userId }).select("+smtpPasswordEnc").lean();
+  if (!settings) return { fromName: mailbox.displayName || "", replyTo: null as string | null, signature: "", transport: null as SystemMailboxSmtpTransport | null };
+
+  let transport: SystemMailboxSmtpTransport | null = null;
+  if (settings.deliveryMode === "CUSTOM") {
+    if (!settings.smtpHost || !settings.smtpUsername || !settings.smtpPasswordEnc) {
+      throw new AppError("MAIL_SMTP_NOT_CONFIGURED", 400, "Complete and test your custom SMTP settings before sending.");
+    }
+    transport = {
+      host: settings.smtpHost,
+      port: settings.smtpPort,
+      secure: settings.smtpSecure,
+      username: settings.smtpUsername,
+      password: decryptSecret(settings.smtpPasswordEnc)
+    };
+  }
+
+  return {
+    fromName: settings.senderName || mailbox.displayName || "",
+    replyTo: settings.replyTo || null,
+    signature: settings.signature || "",
+    transport
+  };
+}
+
 export async function sendSystemMailboxEmail(input: {
   fromAddress: string;
   fromName: string;
+  replyTo?: string | null;
   to: string[];
   cc?: string[];
   subject: string;
@@ -64,20 +126,26 @@ export async function sendSystemMailboxEmail(input: {
   inReplyTo?: string | null;
   references?: string[];
   attachments?: Array<{ filename: string; contentType: string; content: Buffer }>;
+  transport?: SystemMailboxSmtpTransport | null;
 }) {
-  assertSmtpTransportReady();
   const env = getServerEnv();
   if (!env.SYSTEM_MAIL_DOMAIN || !input.fromAddress.toLowerCase().endsWith(`@${env.SYSTEM_MAIL_DOMAIN}`)) {
     throw new AppError("SYSTEM_MAIL_NOT_CONFIGURED", 503, "System mailbox sending is not configured for this domain.");
   }
 
-  const result = await getTransporter().sendMail({
-    from: { name: input.fromName || env.SYSTEM_MAIL_FROM_NAME, address: input.fromAddress },
+  const settings = await resolveUserMailboxDelivery(input.fromAddress);
+  const transport = input.transport ?? settings?.transport ?? null;
+  const client = transport ? customTransporter(transport) : getTransporter();
+  const signature = settings?.signature.trim() ?? "";
+  const text = signature && !input.text.trimEnd().endsWith(signature) ? `${input.text.trimEnd()}\n\n-- \n${signature}` : input.text;
+  const result = await client.sendMail({
+    from: { name: settings?.fromName || input.fromName || env.SYSTEM_MAIL_FROM_NAME, address: input.fromAddress },
+    replyTo: settings?.replyTo || input.replyTo || undefined,
     envelope: { from: input.fromAddress, to: [...input.to, ...(input.cc ?? [])] },
     to: input.to,
     cc: input.cc,
     subject: input.subject,
-    text: input.text,
+    text,
     html: input.html || undefined,
     inReplyTo: input.inReplyTo || undefined,
     references: input.references?.length ? input.references : undefined,

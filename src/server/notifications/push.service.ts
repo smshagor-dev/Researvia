@@ -71,6 +71,9 @@ export async function deliverNotificationPush(notificationId: string) {
 
   const notification = await getNotificationById(notificationId);
   const userId = String(notification.userId);
+  if (notification.metadata && typeof notification.metadata === "object" && "pushAllowed" in notification.metadata && notification.metadata.pushAllowed === false) {
+    return { configured: true, delivered: 0, disabled: 0, failed: 0 };
+  }
   const preferences = await getNotificationPreferences(userId);
   if (!preferences.professorMatchPush && notification.type === "PROFESSOR_MATCH") {
     return { configured: true, delivered: 0, disabled: 0, failed: 0 };
