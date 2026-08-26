@@ -33,6 +33,10 @@ const schema = new Schema({
   htmlBody: { type: String, default: "", maxlength: 500000 },
   snippet: { type: String, default: "", maxlength: 1000 },
   attachments: { type: [attachmentSchema], default: [] },
+  scheduledAt: { type: Date, default: null, index: true },
+  scheduleStatus: { type: String, enum: ["PENDING", "SENDING", "CANCELLED"], default: null, index: true },
+  scheduleJobId: { type: Schema.Types.ObjectId, ref: "Job", default: null },
+  scheduleCancelledAt: { type: Date, default: null },
   readAt: { type: Date, default: null, index: true },
   starredAt: { type: Date, default: null, index: true },
   sentAt: { type: Date, default: null },
@@ -53,6 +57,7 @@ schema.index({ mailboxId: 1, internetMessageId: 1 }, { unique: true });
 schema.index({ userId: 1, folder: 1, createdAt: -1 });
 schema.index({ userId: 1, threadKey: 1, createdAt: 1 });
 schema.index({ userId: 1, starredAt: 1, createdAt: -1 });
+schema.index({ userId: 1, scheduleStatus: 1, scheduledAt: 1 });
 schema.index({ subject: "text", from: "text", to: "text", snippet: "text" });
 schema.index(
   { userId: 1, source: 1, externalAccountKey: 1, externalMailbox: 1, externalUidValidity: 1, externalUid: 1 },
