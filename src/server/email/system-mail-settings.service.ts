@@ -28,6 +28,31 @@ export type SystemMailSettingsUpdate = {
   imapPassword?: string;
 };
 
+export type SystemMailSettingsDto = {
+  deliveryMode: "MANAGED" | "CUSTOM";
+  senderName: string;
+  signature: string;
+  replyTo: string;
+  forwardingEnabled: boolean;
+  forwardingEmail: string;
+  webNotifications: boolean;
+  pushNotifications: boolean;
+  smtpHost: string;
+  smtpPort: number;
+  smtpSecure: boolean;
+  smtpUsername: string;
+  smtpPasswordSaved: boolean;
+  imapHost: string;
+  imapPort: number;
+  imapSecure: boolean;
+  imapUsername: string;
+  imapPasswordSaved: boolean;
+  lastSmtpTestAt: string | null;
+  lastImapTestAt: string | null;
+  lastImapSyncAt: string | null;
+  lastConfigError: string | null;
+};
+
 async function ensureRow(userId: string) {
   await prepareSystemMailboxDatabase();
   const row = await SystemMailSettings.findOneAndUpdate(
@@ -39,7 +64,7 @@ async function ensureRow(userId: string) {
   return row;
 }
 
-function safeDto(row: Record<string, unknown>) {
+function safeDto(row: Record<string, unknown>): SystemMailSettingsDto {
   return {
     deliveryMode: row.deliveryMode === "CUSTOM" ? "CUSTOM" : "MANAGED",
     senderName: String(row.senderName ?? ""),
@@ -70,7 +95,7 @@ function validateAddress(value: string, field: string) {
   if (value && !ADDRESS_RE.test(value)) throw new AppError("MAIL_SETTINGS_INVALID", 400, `${field} must be a valid email address.`);
 }
 
-export async function getSystemMailSettings(userId: string) {
+export async function getSystemMailSettings(userId: string): Promise<SystemMailSettingsDto> {
   const row = await SystemMailSettings.findOne({ userId }).select("+smtpPasswordEnc +imapPasswordEnc").lean() ?? await ensureRow(userId);
   return safeDto(row as unknown as Record<string, unknown>);
 }
