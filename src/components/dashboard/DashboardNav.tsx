@@ -14,6 +14,7 @@ const items = [
   { href: "/dashboard/scholarships", label: "Scholarships", icon: "award" },
   { href: "/dashboard/opportunities", label: "Opportunities", icon: "briefcase" },
   { href: "/dashboard/saved", label: "Saved items", icon: "saved" },
+  { href: "/dashboard/watchlists", label: "Watchlists", icon: "notifications" },
   { href: "/dashboard/compare", label: "Compare", icon: "compare" },
   { href: "/dashboard/applications", label: "Applications", icon: "applications" },
   { href: "/dashboard/recommendations", label: "Recommendations", icon: "ai" },
