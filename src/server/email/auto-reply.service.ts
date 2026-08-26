@@ -61,21 +61,8 @@ export async function evaluateAutoReplyForInbound(userId: string, messageId: str
   let receipt;
   try {
     receipt = await MailAutoReplyReceipt.findOneAndUpdate(
-      {
-        userId,
-        sender,
-        $or: [{ nextEligibleAt: { $lte: now } }, { nextEligibleAt: { $exists: false } }]
-      },
-      {
-        $set: {
-          status: "PENDING",
-          nextEligibleAt: new Date(now.getTime() + COOLDOWN_MS),
-          lastInboundMessageId: message._id,
-          lastReplyMessageId: null,
-          lastError: null,
-          sentAt: null
-        }
-      },
+      { userId, sender, $or: [{ nextEligibleAt: { $lte: now } }, { nextEligibleAt: { $exists: false } }] },
+      { $set: { status: "PENDING", nextEligibleAt: new Date(now.getTime() + COOLDOWN_MS), lastInboundMessageId: message._id, lastReplyMessageId: null, lastError: null, sentAt: null } },
       { upsert: true, new: true, runValidators: true, setDefaultsOnInsert: true }
     ).lean();
   } catch (error) {
@@ -132,4 +119,31 @@ export async function processSystemAutoReply(receiptId: string) {
     await MailAutoReplyReceipt.updateOne({ _id: receipt._id }, { $set: { status: "FAILED", nextEligibleAt: new Date(), lastError: errorMessage } });
     throw error;
   }
+}
+
+export async function scanSystemAutoReplyCandidates() {
+  await prepareSystemMailboxDatabase();
+  const now = new Date();
+  const settingsRows = await SystemMailSettings.find({ autoReplyEnabled: true }).select({ userId: 1, autoReplyLastScanAt: 1 }).limit(500).lean();
+  let examined = 0;
+  let queued = 0;
+  for (const settings of settingsRows) {
+    const userId = String(settings.userId);
+    const floor = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const storedCursor = settings.autoReplyLastScanAt ? new Date(settings.autoReplyLastScanAt) : floor;
+    const since = storedCursor.getTime() < floor.getTime() ? floor : storedCursor;
+    const messages = await SystemMailMessage.find({ userId, direction: "INBOUND", createdAt: { $gt: since, $lte: now } })
+      .select({ _id: 1, createdAt: 1 })
+      .sort({ createdAt: 1, _id: 1 })
+      .limit(100)
+      .lean();
+    for (const message of messages) {
+      const result = await evaluateAutoReplyForInbound(userId, String(message._id));
+      examined += 1;
+      if (result.queued) queued += 1;
+    }
+    const cursor = messages.length === 100 && messages.at(-1)?.createdAt ? new Date(messages.at(-1)!.createdAt) : now;
+    await SystemMailSettings.updateOne({ userId }, { $set: { autoReplyLastScanAt: cursor } });
+  }
+  return { users: settingsRows.length, examined, queued };
 }
