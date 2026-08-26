@@ -1,5 +1,6 @@
 import { prepareDiscoveryDatabase } from "@/server/db/discovery-indexes";
 import { Professor } from "@/server/models/Professor";
+import { StudentProfile } from "@/server/models/StudentProfile";
 import { StudentPublication } from "@/server/models/StudentPublication";
 import {
   StudentEducation,
@@ -54,7 +55,8 @@ export type ProfessorProfileMatch = {
 
 export async function findProfessorMatches(userId: string, limit = 8) {
   await prepareDiscoveryDatabase();
-  const [researchProfile, skills, education, publications, researchExperience, preferences, summary] = await Promise.all([
+  const [legacyProfile, researchProfile, skills, education, publications, researchExperience, preferences, summary] = await Promise.all([
+    StudentProfile.findOne({ userId }).lean(),
     StudentResearchProfile.findOne({ userId }).lean(),
     StudentSkill.find({ userId }).lean(),
     StudentEducation.find({ userId }).sort({ endDate: -1, startDate: -1 }).lean(),
@@ -69,17 +71,28 @@ export async function findProfessorMatches(userId: string, limit = 8) {
     ...array(researchProfile?.secondaryAreas),
     ...array(researchProfile?.preferredDomains),
     ...array(preferences?.preferredResearchAreas),
+    ...array(legacyProfile?.researchInterests),
+    ...array(legacyProfile?.preferredResearchAreas),
     ...researchExperience.flatMap((item) => [item.researchArea, ...array(item.methodology), ...array(item.tools)])
   ]);
   const keywordTerms = terms(array(researchProfile?.keywords));
   const skillTerms = terms([
     ...skills.map((item) => item.name),
-    ...array(researchProfile?.researchMethods)
+    ...array(researchProfile?.researchMethods),
+    ...array(legacyProfile?.skills)
   ]);
   const publicationTerms = terms(publications.flatMap((item) => [item.title, item.venue, item.abstract]));
-  const academicTerms = terms(education.flatMap((item) => [item.degree, item.fieldOfStudy, item.department, item.thesisTitle]));
-  const objectiveTerms = terms([researchProfile?.researchObjective, summary?.researchObjective, summary?.careerObjective]);
-  const preferredCountries = new Set(array(preferences?.preferredCountries).map((item) => item.toLowerCase()));
+  const academicTerms = terms([
+    ...education.flatMap((item) => [item.degree, item.fieldOfStudy, item.department, item.thesisTitle]),
+    legacyProfile?.currentDegree,
+    legacyProfile?.fieldOfStudy,
+    legacyProfile?.currentUniversity
+  ]);
+  const objectiveTerms = terms([researchProfile?.researchObjective, summary?.researchObjective, summary?.careerObjective, legacyProfile?.bio]);
+  const preferredCountries = new Set([
+    ...array(preferences?.preferredCountries),
+    ...array(legacyProfile?.targetCountries)
+  ].map((item) => item.toLowerCase()));
 
   const profileSignalCount = [researchTerms, keywordTerms, skillTerms, publicationTerms, academicTerms, objectiveTerms]
     .filter((set) => set.size > 0).length;
