@@ -13,6 +13,12 @@ const schema = new Schema({
   mailboxId: { type: Schema.Types.ObjectId, ref: "SystemMailbox", required: true, index: true },
   internetMessageId: { type: String, required: true, maxlength: 500 },
   providerMessageId: { type: String, default: null, maxlength: 500 },
+  source: { type: String, enum: ["SYSTEM", "MAILGUN", "IMAP"], default: "SYSTEM", index: true },
+  externalAccountKey: { type: String, default: null, maxlength: 500 },
+  externalMailbox: { type: String, default: null, maxlength: 255 },
+  externalUidValidity: { type: String, default: null, maxlength: 64 },
+  externalUid: { type: Number, default: null, min: 1 },
+  externalFlags: { type: [String], default: [] },
   threadKey: { type: String, required: true, maxlength: 500, index: true },
   inReplyTo: { type: String, default: null, maxlength: 500 },
   references: { type: [String], default: [] },
@@ -48,6 +54,10 @@ schema.index({ userId: 1, folder: 1, createdAt: -1 });
 schema.index({ userId: 1, threadKey: 1, createdAt: 1 });
 schema.index({ userId: 1, starredAt: 1, createdAt: -1 });
 schema.index({ subject: "text", from: "text", to: "text", snippet: "text" });
+schema.index(
+  { userId: 1, source: 1, externalAccountKey: 1, externalMailbox: 1, externalUidValidity: 1, externalUid: 1 },
+  { unique: true, partialFilterExpression: { source: "IMAP", externalUid: { $type: "number" } } }
+);
 
 export type SystemMailMessageDocument = InferSchemaType<typeof schema>;
 export const SystemMailMessage = (models.SystemMailMessage as Model<SystemMailMessageDocument> | undefined) ?? model<SystemMailMessageDocument>("SystemMailMessage", schema);
