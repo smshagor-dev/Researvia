@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 const items = [
   { href: "/dashboard", label: "Overview", icon: "home" },
   { href: "/dashboard/profile", label: "Academic profile", icon: "profile" },
+  { href: "/dashboard/portfolio", label: "Public portfolio", icon: "profile" },
   { href: "/dashboard/research", label: "Research explorer", icon: "research" },
   { href: "/dashboard/reading", label: "Reading list", icon: "research" },
   { href: "/dashboard/workspace", label: "Research workspace", icon: "research" },
