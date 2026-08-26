@@ -1,4 +1,4 @@
-import { connectDatabase } from "@/server/db/mongoose";
+import { prepareNotificationDatabase } from "@/server/db/notification-indexes";
 import { NotificationPreference } from "@/server/models/NotificationPreference";
 
 export type NotificationPreferencesDto = {
@@ -22,7 +22,7 @@ function dto(value: Partial<NotificationPreferencesDto> | null | undefined): Not
 }
 
 export async function getNotificationPreferences(userId: string): Promise<NotificationPreferencesDto> {
-  await connectDatabase();
+  await prepareNotificationDatabase();
   const value = await NotificationPreference.findOne({ userId }).lean();
   return dto(value as Partial<NotificationPreferencesDto> | null);
 }
@@ -31,7 +31,7 @@ export async function updateNotificationPreferences(
   userId: string,
   input: Partial<NotificationPreferencesDto>
 ): Promise<NotificationPreferencesDto> {
-  await connectDatabase();
+  await prepareNotificationDatabase();
   const value = await NotificationPreference.findOneAndUpdate(
     { userId },
     { $set: input, $setOnInsert: { userId } },
