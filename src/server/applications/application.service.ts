@@ -1,4 +1,5 @@
 import type { ApplicationSourceType, ApplicationStatus, CreateApplicationInput, CreateApplicationTaskInput, UpdateApplicationInput, UpdateApplicationTaskInput } from "@/schemas/applications";
+import { syncApplicationDeadlineCalendar, removeApplicationDeadlineCalendar } from "@/server/applications/application-calendar.service";
 import { prepareApplicationDatabase } from "@/server/db/application-indexes";
 import { AppError } from "@/server/errors/AppError";
 import { Application } from "@/server/models/Application";
@@ -114,6 +115,17 @@ async function resolveSource(sourceType: Exclude<ApplicationSourceType, "MANUAL"
   return { id: String(item._id), slug: item.slug, title: item.title, organization: item.organization, university: university.name ?? "", country: item.country, deadline: item.deadline ? new Date(item.deadline) : null, sourceUrl: item.sourceUrl, applicationUrl: item.applicationUrl };
 }
 
+async function syncCalendarFromApplication(userId: string, value: { _id: unknown; title: string; organization?: string | null; university?: string | null; deadline?: Date | null; status: string }) {
+  await syncApplicationDeadlineCalendar(userId, {
+    applicationId: String(value._id),
+    title: value.title,
+    organization: value.organization,
+    university: value.university,
+    deadline: value.deadline ? new Date(value.deadline) : null,
+    status: value.status
+  });
+}
+
 export async function createApplication(userId: string, input: CreateApplicationInput): Promise<ApplicationDto> {
   await prepareApplicationDatabase();
   let values: Record<string, unknown>;
@@ -136,7 +148,10 @@ export async function createApplication(userId: string, input: CreateApplication
   } else {
     const source = await resolveSource(input.sourceType, input.sourceId as string);
     const existing = await Application.findOne({ userId, sourceType: input.sourceType, sourceId: source.id }).lean();
-    if (existing) return applicationDto(existing as unknown as Record<string, unknown>);
+    if (existing) {
+      await syncCalendarFromApplication(userId, existing);
+      return applicationDto(existing as unknown as Record<string, unknown>);
+    }
     values = {
       userId,
       sourceType: input.sourceType,
@@ -163,12 +178,16 @@ export async function createApplication(userId: string, input: CreateApplication
   } catch (error: unknown) {
     if (typeof error === "object" && error !== null && "code" in error && (error as { code?: number }).code === 11000 && input.sourceType !== "MANUAL") {
       const existing = await Application.findOne({ userId, sourceType: input.sourceType, sourceId: input.sourceId }).lean();
-      if (existing) return applicationDto(existing as unknown as Record<string, unknown>);
+      if (existing) {
+        await syncCalendarFromApplication(userId, existing);
+        return applicationDto(existing as unknown as Record<string, unknown>);
+      }
     }
     throw error;
   }
 
   await ApplicationTimeline.create({ userId, applicationId: created._id, type: "CREATED", message: "Application tracker created.", toStatus: created.status });
+  await syncCalendarFromApplication(userId, created);
   return applicationDto(created.toObject() as unknown as Record<string, unknown>);
 }
 
@@ -209,7 +228,7 @@ export async function updateApplication(userId: string, applicationId: string, i
 
   const patch: Record<string, unknown> = { ...input };
   if ("deadline" in input) patch.deadline = asDate(input.deadline);
-  const updated = await Application.findOneAndUpdate({ _id: applicationId, userId }, { $set: patch }, { new: true, runValidators: true }).lean();
+  const updated = await Application.findOneAndUpdate({ _id: applicationId, userId }, { $set: patch }, { returnDocument: "after", runValidators: true }).lean();
   if (!updated) throw new AppError("APPLICATION_NOT_FOUND", 404, "Application not found.");
 
   if (input.status && input.status !== before.status) {
@@ -219,6 +238,7 @@ export async function updateApplication(userId: string, applicationId: string, i
     await ApplicationTimeline.create({ userId, applicationId, type: "DEADLINE_CHANGE", message: updated.deadline ? `Deadline updated to ${new Date(updated.deadline).toISOString().slice(0, 10)}.` : "Deadline removed." });
   }
 
+  await syncCalendarFromApplication(userId, updated);
   return applicationDto(updated as unknown as Record<string, unknown>);
 }
 
@@ -249,7 +269,7 @@ export async function updateApplicationTask(userId: string, applicationId: strin
   delete patch.completed;
   if ("dueDate" in input) patch.dueAt = asDate(input.dueDate);
   if ("completed" in input) patch.completedAt = input.completed ? new Date() : null;
-  const task = await ApplicationTask.findOneAndUpdate({ _id: taskId, applicationId, userId }, { $set: patch }, { new: true, runValidators: true }).lean();
+  const task = await ApplicationTask.findOneAndUpdate({ _id: taskId, applicationId, userId }, { $set: patch }, { returnDocument: "after", runValidators: true }).lean();
   if (!task) throw new AppError("TASK_NOT_FOUND", 404, "Task not found.");
   return taskDto(task as unknown as Record<string, unknown>);
 }
@@ -269,6 +289,7 @@ export async function deleteApplication(userId: string, applicationId: string): 
   if (result.deletedCount !== 1) throw new AppError("APPLICATION_NOT_FOUND", 404, "Application not found.");
   await Promise.all([
     ApplicationTimeline.deleteMany({ userId, applicationId }),
-    ApplicationTask.deleteMany({ userId, applicationId })
+    ApplicationTask.deleteMany({ userId, applicationId }),
+    removeApplicationDeadlineCalendar(userId, applicationId)
   ]);
 }
