@@ -144,9 +144,10 @@ export async function scheduleSystemMail(
 
   const attachments = await persistFiles(userId, files);
   const scheduleToken = randomUUID();
-  let message: Awaited<ReturnType<typeof SystemMailMessage.create>> | null = null;
+  const messageId = new mongoose.Types.ObjectId();
   try {
-    message = await SystemMailMessage.create({
+    await SystemMailMessage.create({
+      _id: messageId,
       userId,
       mailboxId: mailbox._id,
       internetMessageId: `scheduled-${scheduleToken}@${String(mailbox.address).split("@").at(-1)}`,
@@ -167,19 +168,19 @@ export async function scheduleSystemMail(
 
     const job = await enqueueJob({
       type: "SEND_SCHEDULED_SYSTEM_MAIL",
-      payload: { messageId: String(message._id), userId },
+      payload: { messageId: String(messageId), userId },
       availableAt: input.scheduledAt,
       maxAttempts: 5,
-      idempotencyKey: `scheduled-system-mail:${String(message._id)}`
+      idempotencyKey: `scheduled-system-mail:${String(messageId)}`
     });
-    message.scheduleJobId = job._id;
-    await message.save();
-    const populated = await SystemMailMessage.findById(message._id)
+    await SystemMailMessage.updateOne({ _id: messageId }, { $set: { scheduleJobId: job._id } });
+    const populated = await SystemMailMessage.findById(messageId)
       .populate("scheduleJobId", "status attempts maxAttempts lastError availableAt")
       .lean();
+    if (!populated) throw new Error("Scheduled message was not persisted.");
     return serializeScheduledMessage(populated as unknown as Record<string, unknown>);
   } catch (error) {
-    if (message?._id) await SystemMailMessage.deleteOne({ _id: message._id }).catch(() => undefined);
+    await SystemMailMessage.deleteOne({ _id: messageId }).catch(() => undefined);
     await deletePersistedFiles(attachments.map((item) => item.fileId));
     throw error;
   }
@@ -188,17 +189,19 @@ export async function scheduleSystemMail(
 export async function cancelScheduledSystemMail(userId: string, messageId: string) {
   if (!mongoose.isValidObjectId(messageId)) throw new AppError("MAIL_SCHEDULE_NOT_FOUND", 404, "Scheduled message not found.");
   await prepareSystemMailboxDatabase();
-  const message = await SystemMailMessage.findOne({ _id: messageId, userId, scheduleStatus: "PENDING" });
+  const message = await SystemMailMessage.findOne({ _id: messageId, userId, scheduleStatus: "PENDING" }).lean();
   if (!message) throw new AppError("MAIL_SCHEDULE_NOT_CANCELLABLE", 409, "Only a pending scheduled message can be cancelled.");
 
   if (message.scheduleJobId) await cancelJob(String(message.scheduleJobId));
   const fileIds = message.attachments.map((item) => item.fileId as mongoose.Types.ObjectId);
-  message.scheduleStatus = "CANCELLED";
-  message.scheduleCancelledAt = new Date();
-  message.attachments = [];
-  await message.save();
+  await SystemMailMessage.updateOne(
+    { _id: message._id, userId, scheduleStatus: "PENDING" },
+    { $set: { scheduleStatus: "CANCELLED", scheduleCancelledAt: new Date(), attachments: [] } }
+  );
   await deletePersistedFiles(fileIds);
-  return serializeScheduledMessage(message.toObject() as unknown as Record<string, unknown>);
+  const cancelled = await SystemMailMessage.findById(message._id).lean();
+  if (!cancelled) throw new AppError("MAIL_SCHEDULE_NOT_FOUND", 404, "Scheduled message not found.");
+  return serializeScheduledMessage(cancelled as unknown as Record<string, unknown>);
 }
 
 export async function processScheduledSystemMail(messageId: string) {
