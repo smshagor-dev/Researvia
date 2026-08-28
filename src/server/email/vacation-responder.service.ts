@@ -80,7 +80,7 @@ async function ensureSettings(userId: string) {
   const row = await SystemMailSettings.findOneAndUpdate(
     { userId },
     { $setOnInsert: { userId } },
-    { upsert: true, new: true, setDefaultsOnInsert: true }
+    { upsert: true, returnDocument: "after", setDefaultsOnInsert: true }
   ).lean();
   if (!row) throw new AppError("MAIL_SETTINGS_UNAVAILABLE", 500, "Vacation responder settings could not be loaded.");
   return row;
@@ -129,7 +129,7 @@ export async function updateVacationResponderSettings(userId: string, input: Vac
   const row = await SystemMailSettings.findOneAndUpdate(
     { userId },
     { $set: set, $setOnInsert: { userId } },
-    { upsert: true, new: true, runValidators: true, setDefaultsOnInsert: true }
+    { upsert: true, returnDocument: "after", runValidators: true, setDefaultsOnInsert: true }
   ).lean();
   if (!row) throw new AppError("MAIL_SETTINGS_UNAVAILABLE", 500, "Vacation responder settings could not be saved.");
   return settingsDto(row as unknown as Record<string, unknown>);
@@ -150,7 +150,7 @@ async function markSkipped(userId: string, inboundMessageId: string, senderAddre
   await SystemMailAutoReply.findOneAndUpdate(
     { userId, inboundMessageId },
     { $set: { senderAddress, status: "SKIPPED", reason, lastError: null }, $setOnInsert: { userId, inboundMessageId } },
-    { upsert: true, new: true, runValidators: true, setDefaultsOnInsert: true }
+    { upsert: true, returnDocument: "after", runValidators: true, setDefaultsOnInsert: true }
   );
   return { queued: false, reason };
 }
@@ -229,7 +229,7 @@ async function acquireSenderCooldown(userId: string, senderAddress: string, inbo
         $set: { nextAllowedAt, lastInboundMessageId: inboundMessageId },
         $setOnInsert: { userId, senderAddress }
       },
-      { upsert: true, new: true, runValidators: true, setDefaultsOnInsert: true }
+      { upsert: true, returnDocument: "after", runValidators: true, setDefaultsOnInsert: true }
     ).lean();
     return Boolean(row);
   } catch (error) {
@@ -254,7 +254,7 @@ export async function processVacationSystemMail(autoReplyId: string) {
   const log = await SystemMailAutoReply.findOneAndUpdate(
     { _id: autoReplyId, status: { $in: ["QUEUED", "FAILED"] } },
     { $set: { status: "PROCESSING", lastError: null } },
-    { new: true }
+    { returnDocument: "after" }
   );
   if (!log) {
     const existing = await SystemMailAutoReply.findById(autoReplyId).lean();
@@ -352,7 +352,7 @@ export async function processVacationSystemMail(autoReplyId: string) {
             rawHeaders: { "auto-submitted": "auto-replied", "x-researvia-auto-reply": "vacation" }
           }
         },
-        { upsert: true, new: true, setDefaultsOnInsert: true }
+        { upsert: true, returnDocument: "after", setDefaultsOnInsert: true }
       ).lean();
       if (outbound) await SystemMailAutoReply.updateOne({ _id: log._id }, { $set: { outboundMessageId: outbound._id } });
     } catch (storageError) {
