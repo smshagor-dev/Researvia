@@ -9,8 +9,8 @@ This tracker has been reconciled against the implemented ResearVia codebase and 
 - [x] Periodic academic feed synchronization and reconciliation.
   - Evidence: `src/server/feeds/feed-sync.service.ts`, `src/server/feeds/feed.service.ts`, `src/server/models/AcademicFeedSource.ts`, background jobs/admin source controls.
 - [ ] Required CI/status-check enforcement on `main`.
-  - Repository CI is ready and gates dependency audit, lint, typecheck, automated tests, production build, and Chromium browser E2E in `.github/workflows/ci.yml`.
-  - External GitHub repository configuration is still required: protect `main` (or add a ruleset) and require the CI `quality` check before merge. As of the final audit, `main` is unprotected and no repository ruleset exists. This setting cannot be changed through the currently available GitHub integration.
+  - Repository CI is ready and gates reproducible dependency installation, dependency audit, lint, typecheck, automated tests, production build, and Chromium browser E2E in `.github/workflows/ci.yml`.
+  - External GitHub repository configuration is still required: protect `main` (or add a ruleset) and require the CI `quality` check before merge. As of the final audit, `main` is unprotected and no repository ruleset exists. This setting cannot be changed through the currently available GitHub integration and is tracked in issue #30.
 - [x] End-to-end regression coverage for core discovery, matching, saves, notifications and applications.
   - Evidence includes integration/unit suites for matching notifications, application workflows, saved items, productivity flows, profile sections, mailbox, imports/enrichment, deliverability, and operational health, plus Playwright Chromium coverage in `e2e/core-flows.spec.ts` for public auth entry, protected-route redirect, and verified student login to dashboard.
 
@@ -50,11 +50,13 @@ This tracker has been reconciled against the implemented ResearVia codebase and 
 
 - Next.js and `eslint-config-next` are on the patched 16.3.3 release used by this completion wave.
 - Nodemailer is on 9.0.6 and `npm audit --audit-level=high` is a required CI step.
+- Dependency resolution is locked by `package-lock.json` (lockfile v3), and CI uses strict `npm ci` with the npm cache on Node 24 instead of resolving a fresh dependency graph on every run.
 - CI uses Node 24 with `actions/checkout@v5` and `actions/setup-node@v5`.
 - Playwright Chromium runs as a required code-side CI gate after the production build and validates public navigation, authentication, access control, and the completed-student dashboard journey.
 - Mongoose duplicate/reserved-key warnings were cleaned up without renaming persisted legacy fields, and deprecated `findOneAndUpdate({ new: true })` return semantics were migrated in the exercised core/auth/profile/mail/job/rate-limit paths.
-- The completion gate remains: dependency audit, lint, typecheck, automated tests, production build, and browser E2E must all be green before a completion PR is merged.
+- ESLint remains on the validated v9 toolchain because the plugin versions currently resolved by `eslint-config-next@16.3.3` are not yet ESLint 10 compatible. The attempted ESLint 10 upgrade was rejected after CI exposed peer conflicts and a `react/display-name` rule-context runtime failure; no compatibility shim is carried in production.
+- The completion gate remains: reproducible `npm ci`, dependency audit, lint, typecheck, automated tests, production build, and browser E2E must all be green before a completion PR is merged.
 
 ## Remaining external repository setting
 
-The application/code completion scope is complete. The only known item outside the codebase is GitHub merge enforcement: enable branch protection or a repository ruleset for `main` and require the CI `quality` status check before merging.
+The application/code completion scope is complete. The only known item outside the codebase is GitHub merge enforcement: enable branch protection or a repository ruleset for `main` and require the CI `quality` status check before merging. This repository-level action is tracked in issue #30.
