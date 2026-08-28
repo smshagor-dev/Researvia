@@ -213,7 +213,7 @@ export async function processScheduledSystemMail(messageId: string) {
   const message = await SystemMailMessage.findOneAndUpdate(
     { _id: messageId, scheduleStatus: "PENDING" },
     { $set: { scheduleStatus: "SENDING" } },
-    { new: true }
+    { returnDocument: "after" }
   );
   if (!message) {
     const existing = await SystemMailMessage.findById(messageId).select("scheduleStatus").lean();
