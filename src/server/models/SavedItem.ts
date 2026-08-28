@@ -12,7 +12,7 @@ const savedItemSchema = new Schema(
     notes: { type: String, default: "", trim: true, maxlength: 2000 },
     tags: { type: [String], default: [] }
   },
-  { timestamps: true, versionKey: false, strict: "throw" }
+  { timestamps: true, versionKey: false, strict: "throw", suppressReservedKeysWarning: true }
 );
 
 savedItemSchema.index({ userId: 1, itemType: 1, targetId: 1 }, { unique: true });
