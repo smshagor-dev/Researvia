@@ -3,6 +3,7 @@ import { getServerEnv } from "@/config/env";
 import { prepareSystemMailboxDatabase } from "@/server/db/system-mailbox-indexes";
 import { assertOutboundMailAllowed } from "@/server/email/deliverability.service";
 import { AppError } from "@/server/errors/AppError";
+import { SystemMailAlias } from "@/server/models/SystemMailAlias";
 import { SystemMailbox } from "@/server/models/SystemMailbox";
 import { SystemMailSettings } from "@/server/models/SystemMailSettings";
 import { decryptSecret } from "@/server/security/crypto-box";
@@ -88,10 +89,18 @@ export async function sendEmail(input: {
 
 async function resolveUserMailboxDelivery(fromAddress: string) {
   await prepareSystemMailboxDatabase();
-  const mailbox = await SystemMailbox.findOne({ address: fromAddress.toLowerCase() }).select("userId displayName").lean();
+  const address = fromAddress.trim().toLowerCase();
+  let mailbox = await SystemMailbox.findOne({ address, status: "ACTIVE" }).select("userId displayName").lean();
+  let alias: Awaited<ReturnType<typeof SystemMailAlias.findOne>> | null = null;
+  if (!mailbox) {
+    alias = await SystemMailAlias.findOne({ address, status: "ACTIVE" }).lean();
+    if (alias) mailbox = await SystemMailbox.findOne({ _id: alias.mailboxId, userId: alias.userId, status: "ACTIVE" }).select("userId displayName").lean();
+  }
   if (!mailbox) return null;
   const settings = await SystemMailSettings.findOne({ userId: mailbox.userId }).select("+smtpPasswordEnc").lean();
-  if (!settings) return { userId: String(mailbox.userId), fromName: mailbox.displayName || "", replyTo: null as string | null, signature: "", transport: null as SystemMailboxSmtpTransport | null };
+  const aliasName = alias ? String(alias.displayName || "") : "";
+  const aliasReplyTo = alias ? String(alias.replyTo || "") : "";
+  if (!settings) return { userId: String(mailbox.userId), fromName: aliasName || mailbox.displayName || "", replyTo: aliasReplyTo || null as string | null, signature: "", transport: null as SystemMailboxSmtpTransport | null };
 
   let transport: SystemMailboxSmtpTransport | null = null;
   if (settings.deliveryMode === "CUSTOM") {
@@ -109,8 +118,8 @@ async function resolveUserMailboxDelivery(fromAddress: string) {
 
   return {
     userId: String(mailbox.userId),
-    fromName: settings.senderName || mailbox.displayName || "",
-    replyTo: settings.replyTo || null,
+    fromName: aliasName || settings.senderName || mailbox.displayName || "",
+    replyTo: aliasReplyTo || settings.replyTo || null,
     signature: settings.signature || "",
     transport
   };
