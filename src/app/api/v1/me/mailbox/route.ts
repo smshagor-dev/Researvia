@@ -13,6 +13,7 @@ export const runtime = "nodejs";
 const folderSchema = z.enum(["INBOX", "STARRED", "SENT", "DRAFTS", "TRASH"]);
 const draftSchema = z.object({
   id: z.string().optional(),
+  fromAddress: z.string().trim().email().max(320).optional(),
   to: z.array(z.string().email()).max(20).optional(),
   cc: z.array(z.string().email()).max(20).optional(),
   subject: z.string().max(500).optional(),
