@@ -87,8 +87,8 @@ export async function assertOutboundMailAllowed(userId: string, recipients: stri
   if (!normalized.length) throw new AppError("MAIL_RECIPIENT_REQUIRED", 400, "Add at least one valid recipient.");
 
   const suppressed = await MailSuppression.find({ email: { $in: normalized }, active: true }).select({ email: 1, reason: 1 }).lean();
-  if (suppressed.length) {
-    const first = suppressed[0];
+  const first = suppressed[0];
+  if (first) {
     throw new AppError(
       "MAIL_RECIPIENT_SUPPRESSED",
       409,
