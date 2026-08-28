@@ -35,7 +35,7 @@ export async function claimNextJob(workerId: string = randomUUID()) {
       $or: [{ lockedAt: null }, { lockedAt: { $lt: staleLock } }]
     },
     { $set: { status: "PROCESSING", lockedAt: now, lockedBy: workerId }, $inc: { attempts: 1 } },
-    { sort: { availableAt: 1, createdAt: 1 }, new: true }
+    { sort: { availableAt: 1, createdAt: 1 }, returnDocument: "after" }
   );
 }
 
@@ -71,7 +71,7 @@ export async function retryJob(jobId: string) {
   const job = await Job.findOneAndUpdate(
     { _id: jobId, status: { $in: ["FAILED", "RETRYING"] } },
     { $set: { status: "PENDING", availableAt: new Date(), lockedAt: null, lockedBy: null, lastError: null }, $setOnInsert: {} },
-    { new: true }
+    { returnDocument: "after" }
   ).lean();
   if (!job) throw new AppError("JOB_NOT_RETRYABLE", 400, "Only failed or retrying jobs can be retried.");
   return job;
@@ -82,7 +82,7 @@ export async function cancelJob(jobId: string) {
   const job = await Job.findOneAndUpdate(
     { _id: jobId, status: { $in: ["PENDING", "RETRYING"] } },
     { $set: { status: "CANCELLED", lockedAt: null, lockedBy: null } },
-    { new: true }
+    { returnDocument: "after" }
   ).lean();
   if (!job) throw new AppError("JOB_NOT_CANCELLABLE", 400, "Only pending or retrying jobs can be cancelled.");
   return job;
