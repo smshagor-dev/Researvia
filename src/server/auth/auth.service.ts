@@ -54,7 +54,7 @@ export async function verifyEmailAddress(token: string): Promise<void> {
   const claimed = await EmailVerificationToken.findOneAndUpdate(
     { tokenHash: hashOpaqueToken(token), usedAt: null, expiresAt: { $gt: now } },
     { $set: { usedAt: now } },
-    { new: true }
+    { returnDocument: "after" }
   ).lean();
   if (!claimed) throw new AppError("INVALID_VERIFICATION_TOKEN", 400, "This verification link is invalid or has expired.");
   const result = await User.updateOne({ _id: claimed.userId, status: "ACTIVE", emailVerifiedAt: null }, { $set: { emailVerifiedAt: now } });
@@ -116,7 +116,7 @@ export async function resetPassword(input: ResetPasswordInput): Promise<void> {
   const claimed = await PasswordResetToken.findOneAndUpdate(
     { tokenHash: hashOpaqueToken(input.token), usedAt: null, expiresAt: { $gt: now } },
     { $set: { usedAt: now } },
-    { new: true }
+    { returnDocument: "after" }
   ).lean();
   if (!claimed) throw new AppError("INVALID_RESET_TOKEN", 400, "This password reset link is invalid or has expired.");
 
