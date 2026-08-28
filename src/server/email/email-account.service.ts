@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { getServerEnv } from "@/config/env";
 import { connectDatabase } from "@/server/db/mongoose";
+import { assertOutboundMailAllowed } from "@/server/email/deliverability.service";
 import { AppError } from "@/server/errors/AppError";
 import { EmailAccount } from "@/server/models/EmailAccount";
 import { EmailMessage } from "@/server/models/EmailMessage";
@@ -154,6 +155,7 @@ function encodeRfc822(from: string, to: string, subject: string, body: string) {
 
 export async function sendConnectedEmail(input: { userId: string; accountId: string; to: string; subject: string; body: string }) {
   await connectDatabase();
+  await assertOutboundMailAllowed(input.userId, [input.to], "OUTREACH");
   const { account, accessToken } = await refreshAccessToken(input.accountId, input.userId);
   if (account.provider === "GOOGLE") {
     const response = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", {
