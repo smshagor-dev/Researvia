@@ -6,7 +6,7 @@ const schema = new Schema({
   rememberMe: { type: Boolean, default: false },
   ipAddress: { type: String, default: null, maxlength: 64 },
   userAgent: { type: String, default: null, maxlength: 512 },
-  expiresAt: { type: Date, required: true, index: true },
+  expiresAt: { type: Date, required: true },
   usedAt: { type: Date, default: null }
 }, { timestamps: true, versionKey: false, strict: "throw" });
 
