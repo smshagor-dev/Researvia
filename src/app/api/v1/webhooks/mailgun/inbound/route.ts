@@ -20,10 +20,11 @@ export async function POST(request: NextRequest) {
     }
 
     const result = await receiveMailgunMessage(form);
+    const inboundMessageId = "messageId" in result && result.messageId ? String(result.messageId) : null;
     let vacationReply: Awaited<ReturnType<typeof queueVacationReplyForInboundMessage>> | null = null;
-    if (result.accepted && result.messageId) {
+    if (result.accepted && inboundMessageId) {
       try {
-        vacationReply = await queueVacationReplyForInboundMessage(String(result.messageId));
+        vacationReply = await queueVacationReplyForInboundMessage(inboundMessageId);
       } catch {
         // Inbound delivery has already been persisted. A responder failure must not make Mailgun redeliver the message.
         vacationReply = { queued: false, reason: "queue-error" };
