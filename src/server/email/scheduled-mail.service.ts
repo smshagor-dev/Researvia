@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import mongoose from "mongoose";
 import { prepareSystemMailboxDatabase } from "@/server/db/system-mailbox-indexes";
+import { resolveSystemMailSender } from "@/server/email/system-mail-alias.service";
 import { AppError } from "@/server/errors/AppError";
 import { cancelJob, enqueueJob } from "@/server/jobs/job.service";
 import { SystemMailMessage } from "@/server/models/SystemMailMessage";
@@ -97,6 +98,7 @@ function serializeScheduledMessage(message: Record<string, unknown>) {
   const jobStatus = job?.status ? String(job.status) : null;
   return {
     id: String(message._id),
+    from: String(message.from ?? ""),
     to: Array.isArray(message.to) ? message.to.map(String) : [],
     cc: Array.isArray(message.cc) ? message.cc.map(String) : [],
     subject: String(message.subject ?? ""),
@@ -128,13 +130,14 @@ export async function listScheduledSystemMail(userId: string) {
 
 export async function scheduleSystemMail(
   userId: string,
-  input: { to: string[]; cc?: string[]; subject?: string; text: string; scheduledAt: Date },
+  input: { fromAddress?: string | null; to: string[]; cc?: string[]; subject?: string; text: string; scheduledAt: Date },
   files: File[] = []
 ) {
   const mailbox = await ensureSystemMailbox(userId);
   if (mailbox.status !== "ACTIVE") throw new AppError("MAILBOX_UNAVAILABLE", 403, "This system mailbox is not active.");
   validateScheduleDate(input.scheduledAt);
 
+  const sender = await resolveSystemMailSender(userId, input.fromAddress ?? null);
   const to = normalizeAddressList(input.to);
   const cc = normalizeAddressList(input.cc ?? []);
   if (to.length === 0) throw new AppError("MAIL_RECIPIENT_REQUIRED", 400, "Add at least one valid recipient.");
@@ -154,7 +157,7 @@ export async function scheduleSystemMail(
       threadKey: `scheduled-${scheduleToken}`,
       direction: "DRAFT",
       folder: "DRAFTS",
-      from: mailbox.address,
+      from: sender.address,
       to,
       cc,
       subject: safeSubject(input.subject ?? ""),
@@ -226,6 +229,7 @@ export async function processScheduledSystemMail(messageId: string) {
   try {
     const files = await readPersistedFiles(storedAttachments);
     await sendSystemMailMessage(String(message.userId), {
+      fromAddress: message.from,
       to: message.to.map(String),
       cc: message.cc.map(String),
       subject: message.subject,

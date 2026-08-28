@@ -10,6 +10,7 @@ import { enforceRateLimit } from "@/server/security/rate-limit";
 export const runtime = "nodejs";
 
 const schema = z.object({
+  fromAddress: z.string().trim().email().max(320).nullable().optional(),
   to: z.array(z.string().email()).min(1).max(20),
   cc: z.array(z.string().email()).max(20).default([]),
   subject: z.string().max(500).default(""),
@@ -39,6 +40,7 @@ export async function POST(request: NextRequest) {
 
     const form = await request.formData();
     const input = schema.parse({
+      fromAddress: form.get("fromAddress") ? String(form.get("fromAddress")) : null,
       to: parseList(form.get("to")),
       cc: parseList(form.get("cc")),
       subject: String(form.get("subject") ?? ""),

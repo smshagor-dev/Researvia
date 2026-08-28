@@ -4,6 +4,19 @@ import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
 type Folder = "INBOX" | "STARRED" | "SENT" | "DRAFTS" | "TRASH";
 type Attachment = { fileId: string; filename: string; contentType: string; size: number };
+type SenderIdentity = {
+  id: string;
+  address: string;
+  localPart: string;
+  label: string;
+  displayName: string;
+  replyTo: string;
+  status: string;
+  isDefault: boolean;
+  isPrimary: boolean;
+  lastReceivedAt: string | null;
+  lastSentAt: string | null;
+};
 type MailMessage = {
   id: string;
   internetMessageId: string;
@@ -26,6 +39,7 @@ type MailMessage = {
 };
 type MailboxData = {
   mailbox: { id: string; address: string; displayName: string; status: string; quotaBytes: number; usedBytes: number };
+  senders: SenderIdentity[];
   counts: { inboxUnread: number; inbox: number; starred: number; sent: number; drafts: number; trash: number };
   messages: MailMessage[];
 };
@@ -70,6 +84,21 @@ function reSubject(subject: string) {
   return /^re:/i.test(subject) ? subject : `Re: ${subject || "(no subject)"}`;
 }
 
+function activeSenders(data: MailboxData) {
+  return data.senders.filter((identity) => identity.status === "ACTIVE");
+}
+
+function defaultSender(data: MailboxData) {
+  const active = activeSenders(data);
+  return active.find((identity) => identity.isDefault) ?? active.find((identity) => identity.isPrimary) ?? active[0] ?? null;
+}
+
+function replySender(data: MailboxData, message: MailMessage) {
+  const active = activeSenders(data);
+  const addresses = new Set(message.to.map((address) => address.toLowerCase()));
+  return active.find((identity) => addresses.has(identity.address.toLowerCase())) ?? defaultSender(data);
+}
+
 export function SystemMailboxClient({ initialData, initialMessageId = "" }: { initialData: MailboxData; initialMessageId?: string }) {
   const [data, setData] = useState(initialData);
   const [folder, setFolder] = useState<Folder>("INBOX");
@@ -78,6 +107,7 @@ export function SystemMailboxClient({ initialData, initialMessageId = "" }: { in
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [compose, setCompose] = useState(false);
+  const [fromAddress, setFromAddress] = useState(() => defaultSender(initialData)?.address ?? initialData.mailbox.address);
   const [to, setTo] = useState("");
   const [cc, setCc] = useState("");
   const [subject, setSubject] = useState("");
@@ -104,6 +134,7 @@ export function SystemMailboxClient({ initialData, initialMessageId = "" }: { in
     try {
       const next = await api<MailboxData>(`/api/v1/me/mailbox?folder=${encodeURIComponent(nextFolder)}&q=${encodeURIComponent(nextQuery)}`);
       setData(next);
+      setFromAddress((current) => activeSenders(next).some((identity) => identity.address === current) ? current : defaultSender(next)?.address ?? next.mailbox.address);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Mailbox could not be refreshed.");
     } finally {
@@ -121,6 +152,8 @@ export function SystemMailboxClient({ initialData, initialMessageId = "" }: { in
     const id = typeof message === "string" ? message : message.id;
     const row = typeof message === "string" ? null : message;
     if (row?.folder === "DRAFTS") {
+      const sender = activeSenders(data).find((identity) => identity.address.toLowerCase() === row.from.toLowerCase()) ?? defaultSender(data);
+      setFromAddress(sender?.address ?? data.mailbox.address);
       setTo(row.to.join(", "));
       setCc(row.cc.join(", "));
       setSubject(row.subject);
@@ -165,6 +198,7 @@ export function SystemMailboxClient({ initialData, initialMessageId = "" }: { in
   function resetCompose() {
     draftGeneration.current += 1;
     setCompose(false);
+    setFromAddress(defaultSender(data)?.address ?? data.mailbox.address);
     setTo("");
     setCc("");
     setSubject("");
@@ -181,6 +215,8 @@ export function SystemMailboxClient({ initialData, initialMessageId = "" }: { in
   }
 
   function startReply(message: MailMessage) {
+    const sender = replySender(data, message);
+    setFromAddress(sender?.address ?? data.mailbox.address);
     setTo(message.replyTo || message.from);
     setCc("");
     setSubject(reSubject(message.subject));
@@ -201,7 +237,7 @@ export function SystemMailboxClient({ initialData, initialMessageId = "" }: { in
         const result = await api<{ message: MailMessage }>("/api/v1/me/mailbox", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ id: draftId || undefined, to: splitAddresses(to), cc: splitAddresses(cc), subject, text })
+          body: JSON.stringify({ id: draftId || undefined, fromAddress, to: splitAddresses(to), cc: splitAddresses(cc), subject, text })
         });
         if (generation !== draftGeneration.current) return;
         setDraftId(result.message.id);
@@ -212,7 +248,7 @@ export function SystemMailboxClient({ initialData, initialMessageId = "" }: { in
     }, 1200);
     return () => clearTimeout(timer);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [compose, to, cc, subject, text, files.length]);
+  }, [compose, fromAddress, to, cc, subject, text, files.length]);
 
   async function send(event: FormEvent) {
     event.preventDefault();
@@ -221,6 +257,7 @@ export function SystemMailboxClient({ initialData, initialMessageId = "" }: { in
     draftGeneration.current += 1;
     try {
       const form = new FormData();
+      form.set("fromAddress", fromAddress);
       form.set("to", JSON.stringify(splitAddresses(to)));
       form.set("cc", JSON.stringify(splitAddresses(cc)));
       form.set("subject", subject);
@@ -258,6 +295,8 @@ export function SystemMailboxClient({ initialData, initialMessageId = "" }: { in
   }
 
   const selectedMessage = selected?.message ?? null;
+  const senderOptions = activeSenders(data);
+  const selectedSender = senderOptions.find((identity) => identity.address === fromAddress) ?? defaultSender(data);
   const storagePercent = useMemo(() => data.mailbox.quotaBytes > 0 ? Math.min(100, Math.round((data.mailbox.usedBytes / data.mailbox.quotaBytes) * 100)) : 0, [data.mailbox]);
 
   return (
@@ -265,8 +304,8 @@ export function SystemMailboxClient({ initialData, initialMessageId = "" }: { in
       <div className="flex flex-col gap-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
           <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Your ResearVia email</p>
-          <div className="mt-1 flex flex-wrap items-center gap-2"><h1 className="truncate text-xl font-semibold text-slate-950">{data.mailbox.address}</h1><span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">{data.mailbox.status.toLowerCase()}</span></div>
-          <p className="mt-1 text-sm text-slate-500">Professors can reply directly to this address. Messages arrive here and trigger web/push notifications.</p>
+          <div className="mt-1 flex flex-wrap items-center gap-2"><h1 className="truncate text-xl font-semibold text-slate-950">{data.mailbox.address}</h1><span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">{data.mailbox.status.toLowerCase()}</span>{senderOptions.length > 1 ? <span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700">{senderOptions.length} sender identities</span> : null}</div>
+          <p className="mt-1 text-sm text-slate-500">Professors can reply to your primary address or any active alias. All messages arrive in this Inbox.</p>
         </div>
         <button type="button" onClick={startCompose} className="rounded-xl bg-slate-950 px-5 py-3 text-sm font-semibold text-white shadow-sm hover:bg-slate-800">Compose</button>
       </div>
@@ -301,7 +340,7 @@ export function SystemMailboxClient({ initialData, initialMessageId = "" }: { in
               return <div key={message.id} className={`group border-b border-slate-100 ${active ? "bg-slate-100" : unread ? "bg-white" : "bg-slate-50/40"}`}>
                 <button type="button" onClick={() => void openMessage(message)} className="w-full px-4 py-3 text-left">
                   <div className="flex items-start gap-3">
-                    <button type="button" onClick={(event) => { event.stopPropagation(); void patchMessage(message, { starred: !message.starredAt }); }} className={`mt-0.5 text-lg ${message.starredAt ? "text-amber-500" : "text-slate-300 hover:text-amber-500"}`} aria-label={message.starredAt ? "Unstar" : "Star"}>{message.starredAt ? "★" : "☆"}</button>
+                    <span role="button" tabIndex={0} onClick={(event) => { event.stopPropagation(); void patchMessage(message, { starred: !message.starredAt }); }} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.stopPropagation(); void patchMessage(message, { starred: !message.starredAt }); } }} className={`mt-0.5 text-lg ${message.starredAt ? "text-amber-500" : "text-slate-300 hover:text-amber-500"}`} aria-label={message.starredAt ? "Unstar" : "Star"}>{message.starredAt ? "★" : "☆"}</span>
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center justify-between gap-3"><p className={`truncate text-sm ${unread ? "font-bold text-slate-950" : "font-medium text-slate-700"}`}>{message.direction === "OUTBOUND" ? `To: ${message.to.join(", ")}` : message.from}</p><span className="shrink-0 text-[11px] text-slate-400">{fmt(message.receivedAt || message.sentAt || message.createdAt)}</span></div>
                       <p className={`mt-1 truncate text-sm ${unread ? "font-semibold text-slate-900" : "text-slate-700"}`}>{message.folder === "DRAFTS" ? <span className="mr-1 text-rose-600">Draft</span> : null}{message.subject || "(no subject)"}</p>
@@ -323,27 +362,28 @@ export function SystemMailboxClient({ initialData, initialMessageId = "" }: { in
             </div>
             <div className="max-h-[555px] space-y-4 overflow-y-auto p-5">
               {selected.thread.map((message) => <article key={message.id} className="rounded-xl border border-slate-200 p-4">
-                <div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-sm font-semibold text-slate-900">{message.direction === "OUTBOUND" ? data.mailbox.address : message.from}</p><p className="mt-1 text-xs text-slate-500">to {message.direction === "OUTBOUND" ? message.to.join(", ") : data.mailbox.address}</p></div><span className="text-xs text-slate-400">{message.receivedAt ? new Date(message.receivedAt).toLocaleString() : message.sentAt ? new Date(message.sentAt).toLocaleString() : ""}</span></div>
+                <div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-sm font-semibold text-slate-900">{message.from}</p><p className="mt-1 text-xs text-slate-500">to {message.to.join(", ") || "—"}</p></div><span className="text-xs text-slate-400">{message.receivedAt ? new Date(message.receivedAt).toLocaleString() : message.sentAt ? new Date(message.sentAt).toLocaleString() : ""}</span></div>
                 <div className="mt-5 whitespace-pre-wrap break-words text-sm leading-7 text-slate-700">{message.textBody || message.snippet || "(empty message)"}</div>
                 {message.attachments.length ? <div className="mt-5 flex flex-wrap gap-2">{message.attachments.map((attachment) => <a key={attachment.fileId} href={`/api/v1/me/mailbox/messages/${encodeURIComponent(message.id)}/attachments/${encodeURIComponent(attachment.fileId)}`} className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-100">📎 {attachment.filename} · {bytes(attachment.size)}</a>)}</div> : null}
                 {message.direction === "INBOUND" ? <div className="mt-5"><button type="button" onClick={() => startReply(message)} className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Reply</button></div> : null}
               </article>)}
             </div>
-          </div> : <div className="grid h-full min-h-[360px] place-items-center p-8 text-center"><div><div className="mx-auto grid size-12 place-items-center rounded-full bg-slate-100 text-xl">✉</div><h2 className="mt-4 font-semibold text-slate-900">Select an email</h2><p className="mt-2 max-w-sm text-sm leading-6 text-slate-500">Read full conversations, download attachments, star messages, or reply from your ResearVia address.</p></div></div>}
+          </div> : <div className="grid h-full min-h-[360px] place-items-center p-8 text-center"><div><div className="mx-auto grid size-12 place-items-center rounded-full bg-slate-100 text-xl">✉</div><h2 className="mt-4 font-semibold text-slate-900">Select an email</h2><p className="mt-2 max-w-sm text-sm leading-6 text-slate-500">Read conversations, download attachments, star messages, or reply from the same identity that received the email.</p></div></div>}
         </section>
       </div>
 
       {compose ? <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/20 p-3 sm:items-end sm:justify-end sm:p-5" onMouseDown={(event) => { if (event.currentTarget === event.target) setCompose(false); }}>
         <form onSubmit={send} className="w-full max-w-xl overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
-          <div className="flex items-center justify-between bg-slate-950 px-4 py-3 text-white"><div><p className="text-sm font-semibold">New message</p><p className="mt-0.5 text-[11px] text-slate-300">From {data.mailbox.address}</p></div><button type="button" onClick={() => setCompose(false)} className="rounded px-2 py-1 text-xl leading-none text-slate-300 hover:bg-white/10 hover:text-white">×</button></div>
+          <div className="flex items-center justify-between bg-slate-950 px-4 py-3 text-white"><div><p className="text-sm font-semibold">New message</p><p className="mt-0.5 text-[11px] text-slate-300">From {selectedSender?.label || (selectedSender?.isPrimary ? "Primary mailbox" : "Sender identity")}: {fromAddress}</p></div><button type="button" onClick={() => setCompose(false)} className="rounded px-2 py-1 text-xl leading-none text-slate-300 hover:bg-white/10 hover:text-white">×</button></div>
           <div className="divide-y divide-slate-100">
+            <label className="flex items-center gap-3 px-4 py-2.5 text-sm"><span className="w-10 shrink-0 text-slate-500">From</span><select value={fromAddress} onChange={(event) => setFromAddress(event.target.value)} className="min-w-0 flex-1 bg-transparent py-1 font-medium text-slate-800 outline-none">{senderOptions.map((identity) => <option key={identity.id} value={identity.address}>{identity.displayName ? `${identity.displayName} <${identity.address}>` : identity.address}{identity.isDefault ? " — default" : ""}</option>)}</select></label>
             <input value={to} onChange={(event) => setTo(event.target.value)} placeholder="To (comma separated)" className="w-full px-4 py-3 text-sm outline-none" required/>
             <input value={cc} onChange={(event) => setCc(event.target.value)} placeholder="Cc" className="w-full px-4 py-3 text-sm outline-none"/>
             <input value={subject} onChange={(event) => setSubject(event.target.value)} placeholder="Subject" className="w-full px-4 py-3 text-sm outline-none"/>
             <textarea value={text} onChange={(event) => setText(event.target.value)} placeholder="Write your message…" className="min-h-64 w-full resize-y px-4 py-4 text-sm leading-6 outline-none" required/>
           </div>
           {files.length ? <div className="flex flex-wrap gap-2 border-t border-slate-100 px-4 py-3">{files.map((file, index) => <button key={`${file.name}-${index}`} type="button" onClick={() => setFiles((current) => current.filter((_, itemIndex) => itemIndex !== index))} className="rounded-full bg-slate-100 px-3 py-1.5 text-xs text-slate-700">{file.name} ×</button>)}</div> : null}
-          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 px-4 py-3"><div className="flex items-center gap-3"><button disabled={sending} className="rounded-lg bg-slate-950 px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-50" type="submit">{sending ? "Sending…" : "Send"}</button><label className="cursor-pointer rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50">📎 Attach<input type="file" multiple className="hidden" onChange={(event) => setFiles(Array.from(event.target.files ?? []))}/></label></div><span className={`text-xs ${draftStatus === "Draft not saved" ? "text-rose-600" : "text-slate-400"}`}>{files.length ? "Attachments save when sent" : draftStatus}</span></div>
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 px-4 py-3"><div className="flex items-center gap-3"><button disabled={sending || senderOptions.length === 0} className="rounded-lg bg-slate-950 px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-50" type="submit">{sending ? "Sending…" : "Send"}</button><label className="cursor-pointer rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50">📎 Attach<input type="file" multiple className="hidden" onChange={(event) => setFiles(Array.from(event.target.files ?? []))}/></label></div><span className={`text-xs ${draftStatus === "Draft not saved" ? "text-rose-600" : "text-slate-400"}`}>{files.length ? "Attachments save when sent" : draftStatus}</span></div>
         </form>
       </div> : null}
     </div>

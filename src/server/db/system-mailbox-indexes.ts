@@ -1,5 +1,6 @@
 import { connectDatabase } from "@/server/db/mongoose";
 import { SystemMailbox } from "@/server/models/SystemMailbox";
+import { SystemMailAlias } from "@/server/models/SystemMailAlias";
 import { SystemMailAutoReply } from "@/server/models/SystemMailAutoReply";
 import { SystemMailAutoReplyThrottle } from "@/server/models/SystemMailAutoReplyThrottle";
 import { SystemMailMessage } from "@/server/models/SystemMailMessage";
@@ -13,6 +14,7 @@ export async function prepareSystemMailboxDatabase() {
       await connectDatabase();
       await Promise.all([
         SystemMailbox.createIndexes(),
+        SystemMailAlias.createIndexes(),
         SystemMailMessage.createIndexes(),
         SystemMailSettings.createIndexes(),
         SystemMailAutoReply.createIndexes(),

@@ -1,6 +1,7 @@
 import mongoose from "mongoose";
 import { prepareSystemMailboxDatabase } from "@/server/db/system-mailbox-indexes";
 import { sendSystemMailboxEmail } from "@/server/email/mailer";
+import { listSystemMailSenderIdentities, resolveSystemMailSender, touchSystemMailAlias } from "@/server/email/system-mail-alias.service";
 import { AppError } from "@/server/errors/AppError";
 import { enqueueJob } from "@/server/jobs/job.service";
 import { SystemMailAutoReply } from "@/server/models/SystemMailAutoReply";
@@ -167,8 +168,11 @@ export async function queueVacationReplyForInboundMessage(messageId: string) {
 
   const mailbox = await SystemMailbox.findOne({ _id: message.mailboxId, userId, status: "ACTIVE" }).lean();
   if (!mailbox) return { queued: false, reason: "mailbox-unavailable" };
+  const identities = await listSystemMailSenderIdentities(userId);
+  const activeAddresses = new Set(identities.filter((identity) => identity.status === "ACTIVE").map((identity) => identity.address.toLowerCase()));
+  const recipientIdentity = message.to.map(String).map(normalizeAddress).find((address) => activeAddresses.has(address)) ?? String(mailbox.address);
   const senderAddress = normalizeAddress(message.replyTo || message.from);
-  const eligibility = classifyVacationReplyEligibility({ from: senderAddress, mailboxAddress: mailbox.address, rawHeaders: message.rawHeaders });
+  const eligibility = classifyVacationReplyEligibility({ from: senderAddress, mailboxAddress: recipientIdentity, rawHeaders: message.rawHeaders });
   if (!eligibility.eligible) return markSkipped(userId, messageId, senderAddress || "unknown@example.invalid", eligibility.reason);
 
   const existing = await SystemMailAutoReply.findOne({ userId, inboundMessageId: message._id }).lean();
@@ -272,8 +276,12 @@ export async function processVacationSystemMail(autoReplyId: string) {
     await SystemMailAutoReply.updateOne({ _id: log._id }, { $set: { status: "SKIPPED", reason: settings.vacationEnabled ? "outside-window" : "disabled" } });
     return { sent: false, reason: settings.vacationEnabled ? "outside-window" : "disabled" };
   }
+  const identities = await listSystemMailSenderIdentities(userId);
+  const activeAddresses = new Set(identities.filter((identity) => identity.status === "ACTIVE").map((identity) => identity.address.toLowerCase()));
+  const requestedIdentity = inbound.to.map(String).map(normalizeAddress).find((address) => activeAddresses.has(address)) ?? null;
+  const senderIdentity = await resolveSystemMailSender(userId, requestedIdentity);
   const senderAddress = normalizeAddress(inbound.replyTo || inbound.from);
-  const eligibility = classifyVacationReplyEligibility({ from: senderAddress, mailboxAddress: mailbox.address, rawHeaders: inbound.rawHeaders });
+  const eligibility = classifyVacationReplyEligibility({ from: senderAddress, mailboxAddress: senderIdentity.address, rawHeaders: inbound.rawHeaders });
   if (!eligibility.eligible) {
     await SystemMailAutoReply.updateOne({ _id: log._id }, { $set: { status: "SKIPPED", reason: eligibility.reason } });
     return { sent: false, reason: eligibility.reason };
@@ -286,15 +294,16 @@ export async function processVacationSystemMail(autoReplyId: string) {
     return { sent: false, reason: "sender-cooldown" };
   }
 
-  const domain = String(mailbox.address).split("@")[1] || "researvia.local";
+  const domain = String(senderIdentity.address).split("@")[1] || "researvia.local";
   const deterministicMessageId = `<vacation-${String(inbound._id)}@${domain}>`;
   const subject = replySubject(String(settings.vacationSubject ?? ""), String(inbound.subject ?? ""));
   const text = String(settings.vacationMessage ?? "").trim().slice(0, 10000);
   const references = [...(inbound.references ?? []), inbound.internetMessageId].filter(Boolean).slice(-20);
   try {
     const result = await sendSystemMailboxEmail({
-      fromAddress: mailbox.address,
-      fromName: settings.senderName || mailbox.displayName,
+      fromAddress: senderIdentity.address,
+      fromName: senderIdentity.displayName,
+      replyTo: senderIdentity.replyTo,
       to: [senderAddress],
       subject,
       text,
@@ -311,7 +320,10 @@ export async function processVacationSystemMail(autoReplyId: string) {
     if (!result.accepted.length) throw new Error("Vacation reply was rejected by the outbound mail provider.");
     const sentAt = new Date();
     await SystemMailAutoReply.updateOne({ _id: log._id }, { $set: { status: "SENT", reason: null, providerMessageId: result.messageId || deterministicMessageId, sentAt, lastError: null } });
-    await SystemMailAutoReplyThrottle.updateOne({ userId, senderAddress, lastInboundMessageId: inbound._id }, { $set: { lastSentAt: sentAt } });
+    await Promise.all([
+      SystemMailAutoReplyThrottle.updateOne({ userId, senderAddress, lastInboundMessageId: inbound._id }, { $set: { lastSentAt: sentAt } }),
+      touchSystemMailAlias(senderIdentity.aliasId, "lastSentAt", sentAt)
+    ]);
 
     try {
       const outbound = await SystemMailMessage.findOneAndUpdate(
@@ -328,7 +340,7 @@ export async function processVacationSystemMail(autoReplyId: string) {
             references,
             direction: "OUTBOUND",
             folder: "SENT",
-            from: mailbox.address,
+            from: senderIdentity.address,
             to: [senderAddress],
             cc: [],
             subject,

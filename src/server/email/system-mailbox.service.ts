@@ -4,7 +4,9 @@ import { getServerEnv } from "@/config/env";
 import { prepareSystemMailboxDatabase } from "@/server/db/system-mailbox-indexes";
 import { AppError } from "@/server/errors/AppError";
 import { sendSystemMailboxEmail } from "@/server/email/mailer";
+import { listSystemMailSenderIdentities, resolveSystemMailRecipient, resolveSystemMailSender, touchSystemMailAlias } from "@/server/email/system-mail-alias.service";
 import { enqueueJob } from "@/server/jobs/job.service";
+import { SystemMailAlias } from "@/server/models/SystemMailAlias";
 import { SystemMailbox } from "@/server/models/SystemMailbox";
 import { SystemMailMessage } from "@/server/models/SystemMailMessage";
 import { User } from "@/server/models/User";
@@ -56,11 +58,13 @@ export async function ensureSystemMailbox(userId: string) {
   for (let attempt = 0; attempt < 30; attempt += 1) {
     const suffix = attempt < 25 ? randomInt(1000, 10_000).toString() : randomInt(100_000, 1_000_000).toString();
     const localPart = `${base}${suffix}`.slice(0, 63);
+    const address = `${localPart}@${domain}`;
+    if (await SystemMailAlias.exists({ address })) continue;
     try {
       return await SystemMailbox.create({
         userId,
         localPart,
-        address: `${localPart}@${domain}`,
+        address,
         displayName: user.displayName,
         status: "ACTIVE"
       });
@@ -127,7 +131,8 @@ export async function listSystemMailbox(userId: string, input: { folder?: System
   if (query) filter.$text = { $search: query.slice(0, 200) };
 
   const limit = Math.min(Math.max(input.limit ?? 50, 1), 100);
-  const [messages, inboxUnread, inboxCount, starredCount, sentCount, draftCount, trashCount] = await Promise.all([
+  const [senders, messages, inboxUnread, inboxCount, starredCount, sentCount, draftCount, trashCount] = await Promise.all([
+    listSystemMailSenderIdentities(userId),
     SystemMailMessage.find(filter).sort({ receivedAt: -1, sentAt: -1, createdAt: -1 }).limit(limit).lean(),
     SystemMailMessage.countDocuments({ userId, folder: "INBOX", readAt: null }),
     SystemMailMessage.countDocuments({ userId, folder: "INBOX" }),
@@ -139,6 +144,7 @@ export async function listSystemMailbox(userId: string, input: { folder?: System
 
   return {
     mailbox: serializeMailbox(mailbox.toObject ? mailbox.toObject() as Record<string, unknown> : mailbox as unknown as Record<string, unknown>),
+    senders,
     counts: { inboxUnread, inbox: inboxCount, starred: starredCount, sent: sentCount, drafts: draftCount, trash: trashCount },
     messages: messages.map((item) => serializeMessage(item as unknown as Record<string, unknown>))
   };
@@ -227,10 +233,11 @@ function ensureRecipients(values: string[]) {
   return normalized;
 }
 
-export async function saveSystemMailDraft(userId: string, input: { id?: string; to?: string[]; cc?: string[]; subject?: string; text?: string }) {
+export async function saveSystemMailDraft(userId: string, input: { id?: string; fromAddress?: string; to?: string[]; cc?: string[]; subject?: string; text?: string }) {
   const mailbox = await ensureSystemMailbox(userId);
+  const sender = await resolveSystemMailSender(userId, input.fromAddress ?? null);
   const payload = {
-    from: mailbox.address,
+    from: sender.address,
     to: normalizeAddressList(input.to ?? []),
     cc: normalizeAddressList(input.cc ?? []),
     subject: safeSubject(input.subject ?? ""),
@@ -259,7 +266,7 @@ export async function saveSystemMailDraft(userId: string, input: { id?: string; 
   return serializeMessage(created.toObject() as unknown as Record<string, unknown>);
 }
 
-export async function sendSystemMailMessage(userId: string, input: { to: string[]; cc?: string[]; subject: string; text: string; replyToMessageId?: string | null; draftId?: string | null }, files: File[] = []) {
+export async function sendSystemMailMessage(userId: string, input: { fromAddress?: string | null; to: string[]; cc?: string[]; subject: string; text: string; replyToMessageId?: string | null; draftId?: string | null }, files: File[] = []) {
   const mailbox = await ensureSystemMailbox(userId);
   if (mailbox.status !== "ACTIVE") throw new AppError("MAILBOX_UNAVAILABLE", 403, "This system mailbox is not active.");
   const to = ensureRecipients(input.to);
@@ -275,12 +282,20 @@ export async function sendSystemMailMessage(userId: string, input: { to: string[
     if (!parent) throw new AppError("MAIL_NOT_FOUND", 404, "Reply target not found.");
   }
 
+  let requestedFrom = input.fromAddress ?? null;
+  if (!requestedFrom && parent?.direction === "INBOUND") {
+    const identities = await listSystemMailSenderIdentities(userId);
+    const activeAddresses = new Set(identities.filter((identity) => identity.status === "ACTIVE").map((identity) => identity.address.toLowerCase()));
+    requestedFrom = parent.to.map(String).map(normalizeAddress).find((address) => activeAddresses.has(address)) ?? null;
+  }
+  const sender = await resolveSystemMailSender(userId, requestedFrom);
   const attachmentsForSend = await fileBuffers(files);
   const subject = safeSubject(input.subject || parent?.subject || "(no subject)");
   const references = parent ? [...(parent.references ?? []), parent.internetMessageId].filter(Boolean).slice(-20) : [];
   const result = await sendSystemMailboxEmail({
-    fromAddress: mailbox.address,
-    fromName: mailbox.displayName,
+    fromAddress: sender.address,
+    fromName: sender.displayName,
+    replyTo: sender.replyTo,
     to,
     cc,
     subject,
@@ -304,7 +319,7 @@ export async function sendSystemMailMessage(userId: string, input: { to: string[
       references,
       direction: "OUTBOUND",
       folder: "SENT",
-      from: mailbox.address,
+      from: sender.address,
       to,
       cc,
       subject,
@@ -315,7 +330,11 @@ export async function sendSystemMailMessage(userId: string, input: { to: string[
       sentAt: new Date()
     });
     if (input.draftId && mongoose.isValidObjectId(input.draftId)) await SystemMailMessage.deleteOne({ _id: input.draftId, userId, folder: "DRAFTS" });
-    await SystemMailbox.updateOne({ _id: mailbox._id }, { $set: { lastSentAt: new Date() }, $inc: { usedBytes: savedAttachments.reduce((sum, item) => sum + item.size, 0) } });
+    const sentAt = new Date();
+    await Promise.all([
+      SystemMailbox.updateOne({ _id: mailbox._id }, { $set: { lastSentAt: sentAt }, $inc: { usedBytes: savedAttachments.reduce((sum, item) => sum + item.size, 0) } }),
+      touchSystemMailAlias(sender.aliasId, "lastSentAt", sentAt)
+    ]);
     return serializeMessage(message.toObject() as unknown as Record<string, unknown>);
   } catch (error) {
     const bucket = await mailAttachmentBucket();
@@ -350,8 +369,9 @@ export async function receiveMailgunMessage(form: FormData) {
   const domain = mailboxDomain();
   const recipient = normalizeAddress(String(form.get("recipient") ?? ""));
   if (!recipient.endsWith(`@${domain}`)) return { accepted: false, reason: "recipient-domain-mismatch" };
-  const mailbox = await SystemMailbox.findOne({ address: recipient, status: "ACTIVE" }).lean();
-  if (!mailbox) return { accepted: false, reason: "unknown-mailbox" };
+  const resolvedRecipient = await resolveSystemMailRecipient(recipient);
+  if (!resolvedRecipient) return { accepted: false, reason: "unknown-mailbox" };
+  const { mailbox, alias } = resolvedRecipient;
 
   const headers = headersFromMailgun(form.get("message-headers"));
   const token = String(form.get("token") ?? randomUUID());
@@ -402,7 +422,11 @@ export async function receiveMailgunMessage(form: FormData) {
       rawHeaders: Object.fromEntries(headers)
     });
 
-    await SystemMailbox.updateOne({ _id: mailbox._id }, { $set: { lastReceivedAt: new Date() }, $inc: { usedBytes: savedAttachments.reduce((sum, item) => sum + item.size, 0) } });
+    const receivedAt = new Date();
+    await Promise.all([
+      SystemMailbox.updateOne({ _id: mailbox._id }, { $set: { lastReceivedAt: receivedAt }, $inc: { usedBytes: savedAttachments.reduce((sum, item) => sum + item.size, 0) } }),
+      touchSystemMailAlias(alias ? String(alias._id) : null, "lastReceivedAt", receivedAt)
+    ]);
     const notification = await notifyUser({
       userId: String(mailbox.userId),
       type: "SYSTEM_MAIL",
@@ -410,7 +434,7 @@ export async function receiveMailgunMessage(form: FormData) {
       message: `${from} — ${snippet(textBody, htmlBody).slice(0, 220)}`,
       href: `/dashboard/mail?message=${String(message._id)}`,
       dedupeKey: `system-mail:${String(message._id)}`,
-      metadata: { messageId: String(message._id), from, subject, mailboxAddress: mailbox.address }
+      metadata: { messageId: String(message._id), from, subject, mailboxAddress: recipient }
     });
     await enqueueJob({
       type: "SEND_PUSH_NOTIFICATION",
