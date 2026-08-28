@@ -18,6 +18,7 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: 24
+          cache: npm
 
       - name: Start MongoDB replica set
         run: |
@@ -47,7 +48,7 @@ jobs:
           exit 1
 
       - name: Install dependencies
-        run: npm install
+        run: npm ci
       - name: Dependency security audit
         run: npm audit --audit-level=high
       - run: npm run lint
