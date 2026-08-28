@@ -10,6 +10,13 @@ const schema = new Schema({
   forwardingEmail: { type: String, default: "", trim: true, lowercase: true, maxlength: 320 },
   webNotifications: { type: Boolean, default: true },
   pushNotifications: { type: Boolean, default: true },
+  vacationEnabled: { type: Boolean, default: false, index: true },
+  vacationEnabledAt: { type: Date, default: null },
+  vacationStartAt: { type: Date, default: null, index: true },
+  vacationEndAt: { type: Date, default: null, index: true },
+  vacationSubject: { type: String, default: "", maxlength: 500 },
+  vacationMessage: { type: String, default: "", maxlength: 10000 },
+  vacationCooldownHours: { type: Number, default: 24, min: 1, max: 720 },
   smtpHost: { type: String, default: "", trim: true, maxlength: 255 },
   smtpPort: { type: Number, default: 587, min: 1, max: 65535 },
   smtpSecure: { type: Boolean, default: false },
@@ -35,6 +42,7 @@ const schema = new Schema({
 
 schema.index({ deliveryMode: 1, updatedAt: -1 });
 schema.index({ imapSyncEnabled: 1, lastImapSyncAt: 1 });
+schema.index({ vacationEnabled: 1, vacationStartAt: 1, vacationEndAt: 1 });
 
 export type SystemMailSettingsDocument = InferSchemaType<typeof schema>;
 export const SystemMailSettings = (models.SystemMailSettings as Model<SystemMailSettingsDocument> | undefined) ?? model<SystemMailSettingsDocument>("SystemMailSettings", schema);
