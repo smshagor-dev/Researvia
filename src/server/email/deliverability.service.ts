@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import mongoose from "mongoose";
 import { connectDatabase } from "@/server/db/mongoose";
 import { AppError } from "@/server/errors/AppError";
 import { MailDeliveryEvent } from "@/server/models/MailDeliveryEvent";
@@ -189,12 +190,13 @@ export async function listDeliverabilityAdmin(limit = 100) {
 
 export async function setMailSuppressionActive(actorUserId: string, suppressionId: string, active: boolean) {
   await connectDatabase();
+  if (!mongoose.isValidObjectId(actorUserId)) throw new AppError("ADMIN_ID_INVALID", 400, "Administrator identity is invalid.");
   const row = await MailSuppression.findById(suppressionId);
   if (!row) throw new AppError("MAIL_SUPPRESSION_NOT_FOUND", 404, "Mail suppression entry not found.");
   row.active = active;
   if (!active) {
     row.restoredAt = new Date();
-    row.restoredBy = actorUserId as never;
+    row.restoredBy = new mongoose.Types.ObjectId(actorUserId);
   } else {
     row.restoredAt = null;
     row.restoredBy = null;
