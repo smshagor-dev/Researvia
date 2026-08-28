@@ -40,7 +40,7 @@ export async function enforceRateLimitUnits(
       $inc: { count: amount },
       $setOnInsert: { expiresAt: new Date(windowStart + windowMs) }
     },
-    { upsert: true, new: true, setDefaultsOnInsert: true }
+    { upsert: true, returnDocument: "after", setDefaultsOnInsert: true }
   ).lean();
 
   if ((bucket?.count ?? 0) > limit) {

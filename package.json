@@ -13,6 +13,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:e2e": "playwright test",
     "check": "npm run lint && npm run typecheck && npm run test && npm run build"
   },
   "dependencies": {
@@ -30,6 +31,7 @@
     "zod": "^4.1.0"
   },
   "devDependencies": {
+    "@playwright/test": "1.62.1",
     "@tailwindcss/postcss": "^4.1.0",
     "@types/node": "^24.0.0",
     "@types/nodemailer": "^7.0.0",
