@@ -3,8 +3,23 @@
 import Link from "next/link";
 import { FormEvent, useMemo, useState } from "react";
 
+type SenderIdentity = {
+  id: string;
+  address: string;
+  localPart: string;
+  label: string;
+  displayName: string;
+  replyTo: string;
+  status: string;
+  isDefault: boolean;
+  isPrimary: boolean;
+  lastReceivedAt: string | null;
+  lastSentAt: string | null;
+};
+
 type ScheduledMail = {
   id: string;
+  from: string;
   to: string[];
   cc: string[];
   subject: string;
@@ -43,8 +58,19 @@ function defaultScheduleTime() {
   return local.toISOString().slice(0, 16);
 }
 
-export function ScheduledMailManager({ initialMessages }: { initialMessages: ScheduledMail[] }) {
+function activeSenders(senders: SenderIdentity[]) {
+  return senders.filter((sender) => sender.status === "ACTIVE");
+}
+
+function defaultSender(senders: SenderIdentity[]) {
+  const active = activeSenders(senders);
+  return active.find((sender) => sender.isDefault) ?? active.find((sender) => sender.isPrimary) ?? active[0] ?? null;
+}
+
+export function ScheduledMailManager({ initialMessages, initialSenders }: { initialMessages: ScheduledMail[]; initialSenders: SenderIdentity[] }) {
   const [messages, setMessages] = useState(initialMessages);
+  const [senders] = useState(initialSenders);
+  const [fromAddress, setFromAddress] = useState(() => defaultSender(initialSenders)?.address ?? "");
   const [to, setTo] = useState("");
   const [cc, setCc] = useState("");
   const [subject, setSubject] = useState("");
@@ -55,6 +81,7 @@ export function ScheduledMailManager({ initialMessages }: { initialMessages: Sch
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
 
+  const senderOptions = useMemo(() => activeSenders(senders), [senders]);
   const activeCount = useMemo(() => messages.filter((message) => message.status === "PENDING" || message.status === "SENDING").length, [messages]);
 
   async function api<T>(url: string, init?: RequestInit): Promise<T> {
@@ -76,9 +103,11 @@ export function ScheduledMailManager({ initialMessages }: { initialMessages: Sch
     setError("");
     setNotice("");
     try {
+      if (!fromAddress) throw new Error("Choose an active sender identity.");
       const date = new Date(scheduledAt);
       if (Number.isNaN(date.getTime())) throw new Error("Choose a valid delivery time.");
       const form = new FormData();
+      form.set("fromAddress", fromAddress);
       form.set("to", JSON.stringify(splitAddresses(to)));
       form.set("cc", JSON.stringify(splitAddresses(cc)));
       form.set("subject", subject);
@@ -93,7 +122,7 @@ export function ScheduledMailManager({ initialMessages }: { initialMessages: Sch
       setText("");
       setFiles([]);
       setScheduledAt(defaultScheduleTime());
-      setNotice("Message scheduled successfully. Delivery is handled by the durable mailbox worker.");
+      setNotice("Message scheduled successfully. The selected sender identity is pinned until delivery.");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Message could not be scheduled.");
     } finally {
@@ -119,7 +148,7 @@ export function ScheduledMailManager({ initialMessages }: { initialMessages: Sch
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Mailbox automation</p>
           <h1 className="mt-2 text-2xl font-semibold tracking-tight text-slate-950">Scheduled mail</h1>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">Queue messages for a future delivery time. Attachments are stored privately until the worker sends or cancels the message.</p>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">Queue messages for a future delivery time from a specific sender identity. Attachments are stored privately until the worker sends or cancels the message.</p>
         </div>
         <div className="flex items-center gap-2">
           <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-700">{activeCount} active</span>
@@ -133,6 +162,11 @@ export function ScheduledMailManager({ initialMessages }: { initialMessages: Sch
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(360px,0.8fr)]">
         <form onSubmit={submit} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
           <div className="grid gap-4">
+            <label className="grid gap-1.5 text-sm font-medium text-slate-700">From
+              <select required value={fromAddress} onChange={(event) => setFromAddress(event.target.value)} className="rounded-lg border border-slate-300 bg-white px-3 py-2.5 outline-none ring-slate-950 focus:ring-1">
+                {senderOptions.map((sender) => <option key={sender.id} value={sender.address}>{sender.displayName ? `${sender.displayName} <${sender.address}>` : sender.address}{sender.isDefault ? " — default" : ""}</option>)}
+              </select>
+            </label>
             <label className="grid gap-1.5 text-sm font-medium text-slate-700">To
               <input required value={to} onChange={(event) => setTo(event.target.value)} placeholder="professor@university.edu" className="rounded-lg border border-slate-300 px-3 py-2.5 outline-none ring-slate-950 focus:ring-1" />
             </label>
@@ -154,8 +188,9 @@ export function ScheduledMailManager({ initialMessages }: { initialMessages: Sch
               </label>
             </div>
             {files.length ? <p className="text-xs text-slate-500">{files.length} attachment{files.length === 1 ? "" : "s"} selected · {bytes(files.reduce((sum, file) => sum + file.size, 0))}</p> : null}
+            {senderOptions.length === 0 ? <p className="rounded-lg bg-rose-50 px-3 py-2 text-xs text-rose-700">No active sender identity is available. Reactivate your primary mailbox or an alias before scheduling mail.</p> : null}
             <div className="flex justify-end">
-              <button disabled={submitting} className="rounded-lg bg-slate-950 px-5 py-2.5 text-sm font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60">{submitting ? "Scheduling…" : "Schedule message"}</button>
+              <button disabled={submitting || senderOptions.length === 0} className="rounded-lg bg-slate-950 px-5 py-2.5 text-sm font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60">{submitting ? "Scheduling…" : "Schedule message"}</button>
             </div>
           </div>
         </form>
@@ -163,7 +198,7 @@ export function ScheduledMailManager({ initialMessages }: { initialMessages: Sch
         <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
           <div className="border-b border-slate-200 px-5 py-4">
             <h2 className="font-semibold text-slate-950">Delivery queue</h2>
-            <p className="mt-1 text-xs text-slate-500">Automatic retries use the platform job queue.</p>
+            <p className="mt-1 text-xs text-slate-500">Automatic retries use the platform job queue without changing the selected sender.</p>
           </div>
           <div className="divide-y divide-slate-100">
             {messages.length === 0 ? <p className="px-5 py-10 text-center text-sm text-slate-500">No scheduled messages yet.</p> : messages.map((message) => (
@@ -171,6 +206,7 @@ export function ScheduledMailManager({ initialMessages }: { initialMessages: Sch
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <p className="truncate text-sm font-semibold text-slate-950">{message.subject || "(no subject)"}</p>
+                    <p className="mt-1 truncate text-xs text-slate-500">From {message.from || "—"}</p>
                     <p className="mt-1 truncate text-xs text-slate-500">To {message.to.join(", ")}</p>
                   </div>
                   <span className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold ring-1 ring-inset ${statusTone(message.status)}`}>{message.status}</span>
