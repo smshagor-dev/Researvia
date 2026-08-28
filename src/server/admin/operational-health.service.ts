@@ -60,7 +60,7 @@ export async function getOperationalHealth() {
     EmailAccount.aggregate<{ _id: string; count: number }>([{ $group: { _id: "$status", count: { $sum: 1 } } }]),
     EmailAccount.countDocuments({ status: "CONNECTED", lastSyncedAt: { $ne: null, $lt: staleProviderBefore } }),
     AcademicFeedSource.aggregate<{ _id: string; count: number }>([
-      { $group: { _id: { $cond: [{ $ne: ["$lastError", null] }, "ERROR", { $cond: ["$active", "ACTIVE", "INACTIVE"] } }, count: { $sum: 1 } } },
+      { $group: { _id: { $cond: [{ $ne: ["$lastError", null] }, "ERROR", { $cond: ["$active", "ACTIVE", "INACTIVE"] }] }, count: { $sum: 1 } } },
       { $project: { _id: "$_id", count: 1 } }
     ]),
     AcademicFeedSource.countDocuments({ active: true, $or: [{ lastSyncedAt: null }, { lastSyncedAt: { $lt: staleFeedBefore } }] }),
