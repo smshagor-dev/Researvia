@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { apiSuccess, getRequestId, handleApiError } from "@/lib/api-response";
 import { receiveMailgunMessage, verifyMailgunInboundSignature } from "@/server/email/system-mailbox.service";
+import { queueVacationReplyForInboundMessage } from "@/server/email/vacation-responder.service";
 import { AppError } from "@/server/errors/AppError";
 import { enforceRateLimit } from "@/server/security/rate-limit";
 
@@ -19,8 +20,18 @@ export async function POST(request: NextRequest) {
     }
 
     const result = await receiveMailgunMessage(form);
+    const inboundMessageId = "messageId" in result && result.messageId ? String(result.messageId) : null;
+    let vacationReply: Awaited<ReturnType<typeof queueVacationReplyForInboundMessage>> | null = null;
+    if (result.accepted && inboundMessageId) {
+      try {
+        vacationReply = await queueVacationReplyForInboundMessage(inboundMessageId);
+      } catch {
+        // Inbound delivery has already been persisted. A responder failure must not make Mailgun redeliver the message.
+        vacationReply = { queued: false, reason: "queue-error" };
+      }
+    }
     // Unknown/closed local recipients are acknowledged to prevent repeated delivery attempts.
-    return apiSuccess(result);
+    return apiSuccess({ ...result, vacationReply });
   } catch (error) {
     return handleApiError(error, requestId);
   }

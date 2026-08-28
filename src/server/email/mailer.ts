@@ -1,6 +1,7 @@
 import nodemailer, { type Transporter } from "nodemailer";
 import { getServerEnv } from "@/config/env";
 import { prepareSystemMailboxDatabase } from "@/server/db/system-mailbox-indexes";
+import { assertOutboundMailAllowed } from "@/server/email/deliverability.service";
 import { AppError } from "@/server/errors/AppError";
 import { SystemMailbox } from "@/server/models/SystemMailbox";
 import { SystemMailSettings } from "@/server/models/SystemMailSettings";
@@ -90,7 +91,7 @@ async function resolveUserMailboxDelivery(fromAddress: string) {
   const mailbox = await SystemMailbox.findOne({ address: fromAddress.toLowerCase() }).select("userId displayName").lean();
   if (!mailbox) return null;
   const settings = await SystemMailSettings.findOne({ userId: mailbox.userId }).select("+smtpPasswordEnc").lean();
-  if (!settings) return { fromName: mailbox.displayName || "", replyTo: null as string | null, signature: "", transport: null as SystemMailboxSmtpTransport | null };
+  if (!settings) return { userId: String(mailbox.userId), fromName: mailbox.displayName || "", replyTo: null as string | null, signature: "", transport: null as SystemMailboxSmtpTransport | null };
 
   let transport: SystemMailboxSmtpTransport | null = null;
   if (settings.deliveryMode === "CUSTOM") {
@@ -107,11 +108,21 @@ async function resolveUserMailboxDelivery(fromAddress: string) {
   }
 
   return {
+    userId: String(mailbox.userId),
     fromName: settings.senderName || mailbox.displayName || "",
     replyTo: settings.replyTo || null,
     signature: settings.signature || "",
     transport
   };
+}
+
+function safeExtraHeaders(headers?: Record<string, string>) {
+  const result: Record<string, string> = {};
+  for (const [key, value] of Object.entries(headers ?? {})) {
+    if (!/^[A-Za-z0-9-]{1,80}$/.test(key)) continue;
+    result[key] = String(value).replace(/[\r\n]+/g, " ").trim().slice(0, 1000);
+  }
+  return result;
 }
 
 export async function sendSystemMailboxEmail(input: {
@@ -127,6 +138,8 @@ export async function sendSystemMailboxEmail(input: {
   references?: string[];
   attachments?: Array<{ filename: string; contentType: string; content: Buffer }>;
   transport?: SystemMailboxSmtpTransport | null;
+  messageId?: string;
+  headers?: Record<string, string>;
 }) {
   const env = getServerEnv();
   if (!env.SYSTEM_MAIL_DOMAIN || !input.fromAddress.toLowerCase().endsWith(`@${env.SYSTEM_MAIL_DOMAIN}`)) {
@@ -134,13 +147,16 @@ export async function sendSystemMailboxEmail(input: {
   }
 
   const settings = await resolveUserMailboxDelivery(input.fromAddress);
-  const transport = input.transport ?? settings?.transport ?? null;
+  if (!settings) throw new AppError("MAILBOX_UNAVAILABLE", 404, "The sending mailbox could not be resolved.");
+  await assertOutboundMailAllowed(settings.userId, [...input.to, ...(input.cc ?? [])], "GENERAL");
+  const transport = input.transport ?? settings.transport ?? null;
   const client = transport ? customTransporter(transport) : getTransporter();
-  const signature = settings?.signature.trim() ?? "";
+  const signature = settings.signature.trim();
   const text = signature && !input.text.trimEnd().endsWith(signature) ? `${input.text.trimEnd()}\n\n-- \n${signature}` : input.text;
+  const messageId = input.messageId?.replace(/[\r\n]+/g, "").trim().slice(0, 500) || undefined;
   const result = await client.sendMail({
-    from: { name: settings?.fromName || input.fromName || env.SYSTEM_MAIL_FROM_NAME, address: input.fromAddress },
-    replyTo: settings?.replyTo || input.replyTo || undefined,
+    from: { name: settings.fromName || input.fromName || env.SYSTEM_MAIL_FROM_NAME, address: input.fromAddress },
+    replyTo: settings.replyTo || input.replyTo || undefined,
     envelope: { from: input.fromAddress, to: [...input.to, ...(input.cc ?? [])] },
     to: input.to,
     cc: input.cc,
@@ -150,7 +166,8 @@ export async function sendSystemMailboxEmail(input: {
     inReplyTo: input.inReplyTo || undefined,
     references: input.references?.length ? input.references : undefined,
     attachments: input.attachments,
-    headers: { "X-ResearVia-System-Mail": "1" }
+    messageId,
+    headers: { ...safeExtraHeaders(input.headers), "X-ResearVia-System-Mail": "1" }
   });
 
   return { messageId: result.messageId || null, accepted: result.accepted.map(String), rejected: result.rejected.map(String) };
