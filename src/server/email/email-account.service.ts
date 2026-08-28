@@ -200,7 +200,7 @@ export async function syncEmailMetadata(userId: string, accountId: string) {
   } else {
     const response = await fetch("https://graph.microsoft.com/v1.0/me/messages?$top=25&$select=id,conversationId,from,toRecipients,subject,bodyPreview,sentDateTime,receivedDateTime", { headers: { authorization: `Bearer ${accessToken}` } });
     if (!response.ok) throw new AppError("EMAIL_SYNC_FAILED", 502, "Unable to sync Microsoft messages.");
-    const data = await response.json() as { value?: Array<{ id: string; conversationId?: string; from?: { emailAddress?: { address?: string } }; toRecipients?: Array<{ emailAddress?: { address?: string }>; subject?: string; bodyPreview?: string; sentDateTime?: string; receivedDateTime?: string }> };
+    const data = await response.json() as { value?: Array<{ id: string; conversationId?: string; from?: { emailAddress?: { address?: string } }; toRecipients?: Array<{ emailAddress?: { address?: string } }>; subject?: string; bodyPreview?: string; sentDateTime?: string; receivedDateTime?: string }> };
     for (const message of data.value ?? []) {
       const from = message.from?.emailAddress?.address ?? "unknown";
       const direction = from.toLowerCase() === account.email.toLowerCase() ? "OUTBOUND" : "INBOUND";
