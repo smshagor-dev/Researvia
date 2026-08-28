@@ -14,8 +14,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 24
 
@@ -46,7 +46,10 @@ jobs:
           docker logs researvia-mongodb
           exit 1
 
-      - run: npm install
+      - name: Install dependencies
+        run: npm install
+      - name: Dependency security audit
+        run: npm audit --audit-level=high
       - run: npm run lint
       - run: npm run typecheck
       - name: Test
