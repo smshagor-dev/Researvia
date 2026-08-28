@@ -137,7 +137,7 @@ export async function recordMailgunDeliveryFeedback(input: MailgunDeliveryFeedba
         occurredAt: at
       }
     },
-    { upsert: true, new: true, setDefaultsOnInsert: true }
+    { upsert: true, returnDocument: "after", setDefaultsOnInsert: true }
   ).lean();
 
   const reason = suppressionReason(type, input.severity);
@@ -157,7 +157,7 @@ export async function recordMailgunDeliveryFeedback(input: MailgunDeliveryFeedba
         },
         $setOnInsert: { email: recipient, firstSuppressedAt: at }
       },
-      { upsert: true, new: true, runValidators: true, setDefaultsOnInsert: true }
+      { upsert: true, returnDocument: "after", runValidators: true, setDefaultsOnInsert: true }
     );
   }
 
