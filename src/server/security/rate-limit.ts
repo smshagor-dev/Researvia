@@ -18,14 +18,16 @@ async function prepareRateLimitStore(): Promise<void> {
   await rateLimitIndexesPromise;
 }
 
-export async function enforceRateLimit(
+export async function enforceRateLimitUnits(
   scope: string,
   identifier: string,
   limit: number,
-  windowMs: number
+  windowMs: number,
+  units = 1,
+  message = "Too many attempts. Please wait a little before trying again."
 ): Promise<void> {
   await prepareRateLimitStore();
-
+  const amount = Math.max(1, Math.min(Math.floor(units), Math.max(1, limit)));
   const now = Date.now();
   const windowStart = Math.floor(now / windowMs) * windowMs;
   const key = createHash("sha256")
@@ -35,17 +37,22 @@ export async function enforceRateLimit(
   const bucket = await RateLimitBucket.findOneAndUpdate(
     { key },
     {
-      $inc: { count: 1 },
+      $inc: { count: amount },
       $setOnInsert: { expiresAt: new Date(windowStart + windowMs) }
     },
     { upsert: true, new: true, setDefaultsOnInsert: true }
   ).lean();
 
   if ((bucket?.count ?? 0) > limit) {
-    throw new AppError(
-      "RATE_LIMITED",
-      429,
-      "Too many attempts. Please wait a little before trying again."
-    );
+    throw new AppError("RATE_LIMITED", 429, message);
   }
+}
+
+export async function enforceRateLimit(
+  scope: string,
+  identifier: string,
+  limit: number,
+  windowMs: number
+): Promise<void> {
+  return enforceRateLimitUnits(scope, identifier, limit, windowMs, 1);
 }
