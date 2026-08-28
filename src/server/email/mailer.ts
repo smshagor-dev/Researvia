@@ -114,6 +114,15 @@ async function resolveUserMailboxDelivery(fromAddress: string) {
   };
 }
 
+function safeExtraHeaders(headers?: Record<string, string>) {
+  const result: Record<string, string> = {};
+  for (const [key, value] of Object.entries(headers ?? {})) {
+    if (!/^[A-Za-z0-9-]{1,80}$/.test(key)) continue;
+    result[key] = String(value).replace(/[\r\n]+/g, " ").trim().slice(0, 1000);
+  }
+  return result;
+}
+
 export async function sendSystemMailboxEmail(input: {
   fromAddress: string;
   fromName: string;
@@ -127,6 +136,8 @@ export async function sendSystemMailboxEmail(input: {
   references?: string[];
   attachments?: Array<{ filename: string; contentType: string; content: Buffer }>;
   transport?: SystemMailboxSmtpTransport | null;
+  messageId?: string;
+  headers?: Record<string, string>;
 }) {
   const env = getServerEnv();
   if (!env.SYSTEM_MAIL_DOMAIN || !input.fromAddress.toLowerCase().endsWith(`@${env.SYSTEM_MAIL_DOMAIN}`)) {
@@ -138,6 +149,7 @@ export async function sendSystemMailboxEmail(input: {
   const client = transport ? customTransporter(transport) : getTransporter();
   const signature = settings?.signature.trim() ?? "";
   const text = signature && !input.text.trimEnd().endsWith(signature) ? `${input.text.trimEnd()}\n\n-- \n${signature}` : input.text;
+  const messageId = input.messageId?.replace(/[\r\n]+/g, "").trim().slice(0, 500) || undefined;
   const result = await client.sendMail({
     from: { name: settings?.fromName || input.fromName || env.SYSTEM_MAIL_FROM_NAME, address: input.fromAddress },
     replyTo: settings?.replyTo || input.replyTo || undefined,
@@ -150,7 +162,8 @@ export async function sendSystemMailboxEmail(input: {
     inReplyTo: input.inReplyTo || undefined,
     references: input.references?.length ? input.references : undefined,
     attachments: input.attachments,
-    headers: { "X-ResearVia-System-Mail": "1" }
+    messageId,
+    headers: { ...safeExtraHeaders(input.headers), "X-ResearVia-System-Mail": "1" }
   });
 
   return { messageId: result.messageId || null, accepted: result.accepted.map(String), rejected: result.rejected.map(String) };
