@@ -8,7 +8,7 @@ const schema = new Schema({
   normalizedData: { type: Schema.Types.Mixed, default: null },
   errors: { type: [String], default: [] },
   targetId: { type: String, default: null, maxlength: 160 }
-}, { timestamps: true, versionKey: false, strict: "throw" });
+}, { timestamps: true, versionKey: false, strict: "throw", suppressReservedKeysWarning: true });
 
 schema.index({ importJobId: 1, rowNumber: 1 }, { unique: true });
 export type ImportRecordDocument = InferSchemaType<typeof schema>;

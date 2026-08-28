@@ -199,7 +199,7 @@ export async function createOrReplaceStudentProfileSection(
   const row = await target.findOneAndUpdate(
     { userId },
     { $set: input, $setOnInsert: { userId } },
-    { upsert: true, new: true, runValidators: true, setDefaultsOnInsert: true }
+    { upsert: true, returnDocument: "after", runValidators: true, setDefaultsOnInsert: true }
   ).lean();
   if (!row) throw new AppError("PROFILE_SECTION_SAVE_FAILED", 500, "Profile section could not be saved.");
   await syncLegacyProfile(userId, section);
@@ -220,7 +220,7 @@ export async function updateStudentProfileSectionRecord(
   const row = await modelFor(section).findOneAndUpdate(
     { _id: id, userId },
     { $set: input },
-    { new: true, runValidators: true }
+    { returnDocument: "after", runValidators: true }
   ).lean();
   if (!row) throw new AppError("PROFILE_SECTION_NOT_FOUND", 404, "Profile record not found.");
   await syncLegacyProfile(userId, section);

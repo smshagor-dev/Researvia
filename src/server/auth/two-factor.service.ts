@@ -31,7 +31,7 @@ export async function beginTwoFactorSetup(userId: string, email: string) {
   await TwoFactorSecret.findOneAndUpdate(
     { userId },
     { $set: { secretEnc: encryptSecret(secret), recoveryCodeHashes: [], enabledAt: null } },
-    { upsert: true, new: true, runValidators: true }
+    { upsert: true, returnDocument: "after", runValidators: true }
   );
   const issuer = "ResearVia";
   const label = `${issuer}:${email}`;

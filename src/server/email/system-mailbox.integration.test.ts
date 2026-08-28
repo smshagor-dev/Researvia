@@ -142,7 +142,7 @@ describe("system mailbox", () => {
     await SystemMailSettings.findOneAndUpdate(
       { userId: owner._id },
       { $set: { vacationEnabled: true, vacationEnabledAt: new Date(Date.now() - 5000), vacationMessage: "Thank you for your email. I am currently away.", vacationCooldownHours: 24 }, $setOnInsert: { userId: owner._id } },
-      { upsert: true, new: true, setDefaultsOnInsert: true }
+      { upsert: true, returnDocument: "after", setDefaultsOnInsert: true }
     );
     const payload = mailgunForm({ recipient: mailbox.address, messageId: "<vacation-inbound-1@university.edu>", token: "vacation-inbound-token" });
     const received = await receiveMailgunMessage(payload.form);

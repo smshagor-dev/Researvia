@@ -91,7 +91,7 @@ export async function getStudentProfile(userId: string): Promise<StudentProfileD
   const profile = await StudentProfile.findOneAndUpdate(
     { userId },
     { $setOnInsert: { userId } },
-    { upsert: true, new: true, setDefaultsOnInsert: true }
+    { upsert: true, returnDocument: "after", setDefaultsOnInsert: true }
   ).lean();
 
   if (!profile) throw new AppError("PROFILE_UNAVAILABLE", 500, "Student profile could not be loaded.");
@@ -104,7 +104,7 @@ export async function updateStudentProfile(userId: string, input: ProfilePatchIn
   const profile = await StudentProfile.findOneAndUpdate(
     { userId },
     { $set: normalized, $setOnInsert: { userId } },
-    { upsert: true, new: true, runValidators: true, setDefaultsOnInsert: true }
+    { upsert: true, returnDocument: "after", runValidators: true, setDefaultsOnInsert: true }
   ).lean();
 
   if (!profile) throw new AppError("PROFILE_UPDATE_FAILED", 500, "Student profile could not be updated.");
@@ -138,7 +138,7 @@ export async function completeStudentOnboarding(userId: string): Promise<Student
   const completed = await StudentProfile.findOneAndUpdate(
     { userId },
     { $set: { onboardingStep: 4, onboardingCompletedAt: new Date() } },
-    { new: true, runValidators: true }
+    { returnDocument: "after", runValidators: true }
   ).lean();
 
   if (!completed) throw new AppError("PROFILE_UPDATE_FAILED", 500, "Student onboarding could not be completed.");

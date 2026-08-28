@@ -65,7 +65,7 @@ async function ensureRow(userId: string) {
   const row = await SystemMailSettings.findOneAndUpdate(
     { userId },
     { $setOnInsert: { userId } },
-    { upsert: true, new: true, setDefaultsOnInsert: true }
+    { upsert: true, returnDocument: "after", setDefaultsOnInsert: true }
   ).lean();
   if (!row) throw new AppError("MAIL_SETTINGS_UNAVAILABLE", 500, "Mailbox settings could not be loaded.");
   return row;
@@ -182,7 +182,7 @@ export async function updateSystemMailSettings(userId: string, input: SystemMail
   await SystemMailSettings.findOneAndUpdate(
     { userId },
     { $set: set, $setOnInsert: { userId } },
-    { upsert: true, new: true, runValidators: true, setDefaultsOnInsert: true }
+    { upsert: true, returnDocument: "after", runValidators: true, setDefaultsOnInsert: true }
   );
   return getSystemMailSettings(userId);
 }
